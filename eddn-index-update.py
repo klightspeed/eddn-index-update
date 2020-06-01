@@ -5,6 +5,7 @@ import os.path
 import sys
 import json
 import bz2
+import gzip
 import edts.edtslib.system as edtslib_system
 import edts.edtslib.id64data as edtslib_id64data
 import glob
@@ -15,13 +16,24 @@ from timeit import default_timer as timer
 import re
 import numpy
 import numpy.core.records
-from datetime import datetime
+from datetime import datetime, timedelta
 import argparse
+import csv
 
 eddndir = '/srv/EDDN/data'
 edsmdir = '/srv/EDSM/dumps'
+eddbdir = '/srv/EDDB/dumps'
 edsmsysfile = edsmdir + '/systemsWithCoordinates.jsonl.bz2'
 edsmbodiesfile = edsmdir + '/bodies.jsonl.bz2'
+edsmstationsfile = edsmdir + '/stations.json.gz'
+eddbsysfile = eddbdir + '/systems.csv.bz2'
+eddbstationsfile = eddbdir + '/stations.jsonl'
+eddnrejectfile = '/srv/eddata/namedbodies/eddn-index-update-reject.jsonl'
+edsmsysrejectfile = '/srv/eddata/namedbodies/edsmsys-index-update-reject.jsonl'
+edsmbodiesrejectfile = '/srv/eddata/namedbodies/edsmbodies-index-update-reject.jsonl'
+edsmstationsrejectfile = '/srv/eddata/namedbodies/edsmstations-index-update-reject.jsonl'
+eddbsysrejectfile = '/srv/eddata/namedbodies/eddbsys-index-update-reject.jsonl'
+eddbstationsrejectfile = '/srv/eddata/namedbodies/eddbstations-index-update-reject.jsonl'
 
 #conntype = 'mysql.connector'
 conntype = 'mysqlclient'
@@ -36,22 +48,53 @@ allow303bodies = True
 
 revpgsysre = re.compile('^([0-9]+)(|-[0-9]+)([a-h]) ([A-Z])-([A-Z])([A-Z]) ((rotceS|noigeR) [A-Za-z0-9.\' -]+|[1-6][a-z]+[A-Z]|ZCI|[a-z]+[A-Z](| [a-z]+[A-Z]))$')
 pgsysre = re.compile('^([A-Za-z0-9.()\' -]+?) ([A-Z][A-Z]-[A-Z]) ([a-h])(?:([0-9]+)-|)([0-9]+)$')
-pgbodyre = re.compile('^(?:|(?:| (A?B?C?D?E?F?G?H?))(?:| ([A-Z]) Belt(?:| Cluster ([1-9][0-9]?))| ([1-9][0-9]?(?:[+][1-9][0-9]?)*)(?:| ([A-Z]) Ring| ([a-z](?:[+][a-z])*)(?:| ([A-Z]) Ring| ([a-z](?:[+][a-z])*)(?:| ([A-Z]) Ring| ([a-z]))))))$')
+pgbodyre = re.compile(
+    '''
+      ^
+      (?:|[ ](?P<stars>A?B?C?D?E?F?G?H?I?J?K?L?M?N?O?))
+      (?:
+       |[ ](?P<nebula>Nebula)
+       |[ ](?P<belt>[A-Z])[ ]Belt(?:|[ ]Cluster[ ](?P<cluster>[1-9][0-9]?))
+       |[ ]Comet[ ](?P<stellarcomet>[1-9][0-9]?)
+       |[ ](?P<planet>[1-9][0-9]?(?:[+][1-9][0-9]?)*)
+        (?:
+         |[ ](?P<planetring>[A-Z])[ ]Ring
+         |[ ]Comet[ ](?P<planetcomet>[1-9][0-9]?)
+         |[ ](?P<moon1>[a-z](?:[+][a-z])*)
+          (?:
+           |[ ](?P<moon1ring>[A-Z])[ ]Ring
+           |[ ]Comet[ ](?P<moon1comet>[1-9][0-9]?)
+           |[ ](?P<moon2>[a-z](?:[+][a-z])*)
+            (?:
+             |[ ](?P<moon2ring>[A-Z])[ ]Ring
+             |[ ]Comet[ ](?P<moon2comet>[1-9][0-9]?)
+             |[ ](?P<moon3>[a-z])
+            )
+          )
+        )
+      )
+      $
+   ''', re.VERBOSE)
 timestampre = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-5][0-9])')
+carriernamere = re.compile('^[A-Z][0-9][0-9]-[A-Z][0-9][A-Z]$')
 
 tsbasedate = datetime.strptime('2014-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+ed300date = datetime.strptime('2018-02-27 15:00:00', '%Y-%m-%d %H:%M:%S')
 ed303date = datetime.strptime('2018-03-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 ed304date = datetime.strptime('2018-03-27 16:00:00', '%Y-%m-%d %H:%M:%S')
 ed330date = datetime.strptime('2018-12-11 16:00:00', '%Y-%m-%d %H:%M:%S')
+ed332date = datetime.strptime('2019-01-17 10:00:00', '%Y-%m-%d %H:%M:%S')
 
 EDDNSystem = namedtuple('EDDNSystem', ['id', 'id64', 'name', 'x', 'y', 'z'])
-EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil'])
-EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'syslinecount', 'stnlinecount', 'bodylinecount'])
+EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'loctype', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil', 'test'])
+EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'syslinecount', 'stnlinecount', 'bodylinecount', 'softwarelinecount', 'infolinecount', 'factionlinecount', 'populatedlinecount', 'test'])
 EDDNRegion = namedtuple('EDDNRegion', ['id', 'name', 'x0', 'y0', 'z0', 'sizex', 'sizey', 'sizez', 'regionaddr', 'isharegion'])
-EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'bodyid', 'planet', 'argofperiapsis', 'validfrom', 'validuntil', 'isrejected'])
+EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'bodyid', 'category', 'argofperiapsis', 'validfrom', 'validuntil', 'isrejected'])
+EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
 argparser.add_argument('--reprocess', dest='reprocess', action='store_const', const=True, default=False, help='Reprocess files with unprocessed entries')
+argparser.add_argument('--reprocess-all', dest='reprocessall', action='store_const', const=True, default=False, help='Reprocess all files')
 argparser.add_argument('--market', dest='market', action='store_const', const=True, default=False, help='Process market/shipyard/outfitting messages')
 argparser.add_argument('--edsmsys', dest='edsmsys', action='store_const', const=True, default=False, help='Process EDSM systems dump')
 argparser.add_argument('--edsmbodies', dest='edsmbodies', action='store_const', const=True, default=False, help='Process EDSM bodies dump')
@@ -59,6 +102,17 @@ argparser.add_argument('--edsmstations', dest='edsmstations', action='store_cons
 argparser.add_argument('--eddbsys', dest='eddbsys', action='store_const', const=True, default=False, help='Process EDDB systems dump')
 argparser.add_argument('--eddbstations', dest='eddbstations', action='store_const', const=True, default=False, help='Process EDDB stations dump')
 argparser.add_argument('--noeddn', dest='noeddn', action='store_const', const=True, default=False, help='Skip EDDN processing')
+
+EDSMStationTypes = {
+    'Asteroid base': 'AsteroidBase',
+    'Coriolis Starport': 'Coriolis',
+    'Mega ship': 'MegaShip',
+    'Ocellus Starport': 'Ocellus',
+    'Orbis Starport': 'Orbis',
+    'Outpost': 'Outpost',
+    'Planetary Outpost': 'CraterOutpost',
+    'Planetary Port': 'CraterPort'
+}
 
 def createconnection():
     if conntype == 'mysql.connector':
@@ -100,299 +154,297 @@ def makestreamingcursor(conn):
         raise ValueError('Invalid connection type {0}'.format(conntype))
 
 class EDDNSysDB(object):
-    def __init__(self, conn, loadedsmsys, loadedsmbodies):
+    def __init__(self, conn, loadedsmsys, loadedsmbodies, loadeddbsys):
         self.conn = conn
         self.regions = {}
         self.regionaddrs = {}
         self.namedsystems = {}
         self.namedbodies = {}
+        self.parentsets = {}
+        self.bodydesigs = {}
+        self.software = {}
+        self.factions = {}
         self.edsmsysids = None
         self.edsmbodyids = None
+        self.eddbsysids = None
 
         try:
-            timer = Timer(['sql', 'sqlpg', 'sqlha', 'sqlname', 'sqlregion', 'sqlpgbody', 'sqlbodyname', 'sqledsmsys', 'sqledsmbody', 'load', 'loadname', 'loadha', 'loadpg', 'loadregion', 'loadpgbody', 'loadbodyname', 'loadedsmsys', 'loadedsmbody'])
-            sys.stderr.write('Loading Regions\n')
-            c = makestreamingcursor(conn)
-            c.execute('SELECT Id, Name, X0, Y0, Z0, SizeX, SizeY, SizeZ, RegionAddress, IsHARegion FROM Regions')
-            timer.time('sql')
-            rows = c.fetchall()
-            timer.time('sqlregion', len(rows))
-            for row in rows:
-                ri = EDDNRegion(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01')
-                self.regions[ri.name.lower()] = ri
-                if ri.regionaddr is not None:
-                    self.regionaddrs[ri.regionaddr] = ri
+            timer = Timer({
+                'sql',
+                'sqlname',
+                'sqlregion',
+                'sqlbodyname',
+                'sqledsmsys',
+                'sqledsmbody',
+                'sqleddbsys',
+                'sqlparents',
+                'sqlsoftware',
+                'sqlbodydesigs',
+                'sqlfactions',
+                'load',
+                'loadname',
+                'loadregion',
+                'loadbodyname',
+                'loadedsmsys',
+                'loadedsmbody',
+                'loadeddbsys',
+                'loadparents',
+                'loadsoftware',
+                'loadbodydesigs',
+                'loadfactions'
+            })
+            self.loadregions(conn, timer)
+            self.loadnamedsystems(conn, timer)
+            self.loadnamedbodies(conn, timer)
+            self.loadparentsets(conn, timer)
+            self.loadsoftware(conn, timer)
+            self.loadbodydesigs(conn, timer)
+            self.loadfactions(conn, timer)
 
-            timer.time('loadregion', len(rows))
+            if loadedsmsys or loadedsmbodies:
+                self.loadedsmsystems(conn, timer)
 
-            c = makestreamingcursor(conn)
-            c.execute('SELECT COUNT(*) FROM Systems')
-            row = c.fetchone()
-            pgsyscount = row[0]
-
-            c = makestreamingcursor(conn)
-            c.execute('SELECT MAX(Id) FROM Systems')
-            row = c.fetchone()
-            maxsysid = row[0]
-
-            c = makestreamingcursor(conn)
-            c.execute('SELECT COUNT(*) FROM Systems_HASector')
-            row = c.fetchone()
-            hasyscount = row[0]
-            pgsyscount -= hasyscount
-
-            c = makestreamingcursor(conn)
-            c.execute('SELECT MAX(EdsmId) FROM Systems_EDSM')
-            row = c.fetchone()
-            maxedsmsysid = row[0]
-
-            c = makestreamingcursor(conn)
-            c.execute('SELECT MAX(EdsmId) FROM SystemBodies_EDSM')
-            row = c.fetchone()
-            maxedsmbodyid = row[0]
-
-            c = makestreamingcursor(conn)
-            c.execute('SELECT COUNT(*) FROM SystemBodies')
-            row = c.fetchone()
-            pgbodycount = row[0]
-
-            timer.time('sql')
-
-            timer.time('load')
-            sys.stderr.write('Loading Named Systems\n')
-            c = makestreamingcursor(conn)
-            c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns JOIN Systems_Named sn ON sn.Id = ns.Id')
-            timer.time('sql')
-            rows = c.fetchall()
-            timer.time('sqlname', len(rows))
-            for row in rows:
-                si = EDDNSystem(row[0], row[1], row[2], row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105)
-                if si.name not in self.namedsystems:
-                    self.namedsystems[si.name] = si
-                elif type(self.namedsystems[si.name]) is not list:
-                    self.namedsystems[si.name] = [self.namedsystems[si.name]]
-                    self.namedsystems[si.name] += [si]
-                else:
-                    self.namedsystems[si.name] += [si]
-
-            pgsyscount -= len(rows)
-            timer.time('loadname', len(rows))
-
-            sys.stderr.write('Loading Named Bodies\n')
-            c = makestreamingcursor(conn)
-            c.execute('SELECT nb.Id, nb.BodyName, nb.SystemName, nb.SystemId, nb.BodyID, nb.Planet, nb.ArgOfPeriapsis, nb.ValidFrom, nb.ValidUntil, nb.IsRejected FROM SystemBodyNames nb JOIN SystemBodies_Named sbn ON sbn.Id = nb.Id')
-            timer.time('sql')
-            rows = c.fetchall()
-            timer.time('sqlbodyname', len(rows))
-            for row in rows:
-                bi = EDDNBody(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
-                if bi.systemid not in self.namedbodies:
-                    self.namedbodies[bi.systemid] = {}
-                snb = self.namedbodies[bi.systemid]
-                if bi.name not in snb:
-                    snb[bi.name] = bi
-                elif type(snb[bi.name]) is not list:
-                    snb[bi.name] = [snb[bi.name]]
-                    snb[bi.name] += [bi]
-                else:
-                    snb[bi.name] += [bi]
-
-            pgbodycount -= len(rows)
-            timer.time('loadbodyname')
-
-            if uselookup:
-                self.regionsystemptrs = numpy.recarray([max([r.id for n, r in self.regions.items()]) + 1], dtype=[('first', '<i4'), ('last', '<i4'), ('isharegion', '|b1')])
-                self.systembodyptrs = numpy.recarray(maxsysid + 1, dtype=[('first', '<i4'), ('last', '<i4')])
-
-                for n, r in self.regions.items():
-                    self.regionsystemptrs[r.id].isharegion = r.isharegion
-
-                sys.stderr.write('Loading Sector Systems\n')
-                c = makestreamingcursor(conn)
-                c.execute('SELECT s.ModSystemAddress, s.Id, s.X, s.Y, s.Z, h.RegionId, h.PGSuffix FROM Systems s JOIN Systems_HASector h ON h.Id = s.Id ORDER BY h.RegionId, h.ModSystemAddress')
-                
-                hasysarray = numpy.zeros(hasyscount, dtype=[('modsysaddr', '<i8'), ('id', '<i4'), ('x', '<i4'), ('y', '<i4'), ('z', '<i4'), ('regionid', '<i4'), ('suffix', '|S16')])
-                self.hasystems = hasysarray.view(numpy.core.records.recarray)
-                timer.time('sql')
-                
-                i = 0
-                lastregionid = -1
-                while True:
-                    rows = c.fetchmany(10000)
-                    timer.time('sqlha', len(rows))
-                    if len(rows) == 0:
-                        break
-                    for row in rows:
-                        rec = hasysarray[i]
-                        rec[0] = row[0]
-                        rec[1] = row[1]
-                        rec[2] = row[2]
-                        rec[3] = row[3]
-                        rec[4] = row[4]
-                        regionid = rec[5] = row[5]
-                        rec[6] = row[6]
-                        if regionid != lastregionid:
-                            self.regionsystemptrs[lastregionid].last = i
-                            lastregionid = regionid
-                            self.regionsystemptrs[regionid].first = i
-                        i += 1
-                    sys.stderr.write('.')
-                    if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1}\n'.format(i, hasyscount))
-                    sys.stderr.flush()
-                    timer.time('loadha', len(rows))
-                self.regionsystemptrs[lastregionid].last = pgsyscount
-                sys.stderr.write('  {0} / {1}\n'.format(i, hasyscount))
-
-                sys.stderr.write('Loading Procgen Systems\n')
-                c = makestreamingcursor(conn)
-                c.execute('SELECT ModSystemAddress, Id, X, Y, Z FROM Systems s WHERE IsHASystem = 0 AND IsNamedSystem = 0 ORDER BY ModSystemAddress')
-
-                pgsysarray = numpy.zeros(pgsyscount, dtype=[('modsysaddr', '<i8'), ('id', '<i4'), ('x', '<i4'), ('y', '<i4'), ('z', '<i4')])
-                self.pgsystems = pgsysarray.view(numpy.core.records.recarray)
-                timer.time('sql')
-
-                i = 0
-                lastregionaddr = -1
-                regionid = -1
-                while True:
-                    rows = c.fetchmany(10000)
-                    timer.time('sqlpg', len(rows))
-                    if len(rows) == 0:
-                        break
-                    for row in rows:
-                        rec = pgsysarray[i]
-                        rec[0] = row[0]
-                        rec[1] = row[1]
-                        rec[2] = row[2]
-                        rec[3] = row[3]
-                        rec[4] = row[4]
-                        regionaddr = row[0] >> 40
-                        if regionaddr != lastregionaddr:
-                            lastregionaddr = regionaddr
-                            self.regionsystemptrs[regionid].last = i
-                            regionid = self.regionaddrs[regionaddr].id
-                            self.regionsystemptrs[regionid].first = i
-                        i += 1
-                    sys.stderr.write('.')
-                    if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1}\n'.format(i, pgsyscount))
-                    sys.stderr.flush()
-                    timer.time('loadpg', len(rows))
-                self.regionsystemptrs[regionid].last = pgsyscount
-                sys.stderr.write('  {0} / {1}\n'.format(i, pgsyscount))
-
-                sys.stderr.write('Loading Procgen Bodies\n')
-                c = makestreamingcursor(conn)
-                c.execute('''
-                    SELECT 
-                        Id, 
-                        SystemId, 
-                        BodyId | (HasBodyId << 15) | (Moon3 << 16) | (Moon3IsRing << 23) | (Moon2 << 24) | (Moon2IsRing << 31) | (Moon1 << 32) | (Moon1IsRing << 39) | (Planet << 40) | (IsBelt << 47) | (Stars << 48) AS Packed 
-                    FROM SystemBodies 
-                    WHERE IsNamedBody = 0 
-                    GROUP BY SystemId, Stars, IsBelt, Planet, Moon1IsRing, Moon1, Moon2IsRing, Moon2, Moon3IsRing, Moon3 
-                    HAVING COUNT(*) = 1 
-                    ORDER BY SystemId, Stars, IsBelt, Planet, Moon1IsRing, Moon1, Moon2IsRing, Moon2, Moon3IsRing, Moon3
-                ''')
-
-                pgbodyarray = numpy.zeros(pgbodycount, dtype=[('bodyident', '<i8'), ('sysid', '<i4'), ('id', '<i4')])
-                self.pgbodies = pgbodyarray.view(numpy.core.records.recarray)
-                timer.time('sql')
-
-                i = 0
-                lastsystemid = 0
-                bodyptrarray = self.systembodyptrs.view(numpy.ndarray)
-                while True:
-                    rows = c.fetchmany(10000)
-                    timer.time('sqlpgbody', len(rows))
-                    if len(rows) == 0:
-                        break
-                    for row in rows:
-                        rec = pgbodyarray[i]
-                        rec[0] = row[2]
-                        systemid = rec[1] = row[1]
-                        rec[2] = row[0]
-                        if systemid != lastsystemid:
-                            bodyptrarray[lastsystemid][1] = i
-                            lastsystemid = systemid
-                            bodyptrarray[systemid][0] = i
-                        i += 1
-                    sys.stderr.write('.')
-                    if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1}\n'.format(i, pgbodycount))
-                    sys.stderr.flush()
-                    timer.time('loadpgbody', len(rows))
-                bodyptrarray[lastsystemid][1] = i
-                sys.stderr.write('  {0} / {1}\n'.format(i, pgbodycount))
-
-            if (loadedsmsys or loadedsmbodies) and maxedsmsysid:
-                sys.stderr.write('Loading EDSM System IDs\n')
-                c = makestreamingcursor(conn)
-                c.execute('SELECT Id, EdsmId, TimestampSeconds FROM Systems_EDSM')
-
-                edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
-                self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
-                timer.time('sql')
-
-                i = 0
-                maxedsmid = 0
-                while True:
-                    rows = c.fetchmany(10000)
-                    timer.time('sqledsmsys', len(rows))
-                    if len(rows) == 0:
-                        break
-                    for row in rows:
-                        edsmid = row[1]
-                        rec = edsmsysarray[edsmid]
-                        rec[0] = row[0]
-                        rec[1] = edsmid
-                        rec[2] = row[2]
-                        i += 1
-                        if edsmid > maxedsmid:
-                            maxedsmid = edsmid
-                    sys.stderr.write('.')
-                    if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmsysid, edsmid))
-                    sys.stderr.flush()
-                    timer.time('loadedsmsys', len(rows))
-                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmsysid))
-
-            if loadedsmbodies and maxedsmbodyid:
-                sys.stderr.write('Loading EDSM System IDs\n')
-                c = makestreamingcursor(conn)
-                c.execute('SELECT Id, EdsmId, TimestampSeconds FROM SystemBodies_EDSM')
-
-                edsmbodyarray = numpy.zeros(maxedsmbodyid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
-                self.edsmbodyids = edsmbodyarray.view(numpy.core.records.recarray)
-                timer.time('sql')
-
-                i = 0
-                maxedsmid = 0
-                while True:
-                    rows = c.fetchmany(10000)
-                    timer.time('sqledsmbody', len(rows))
-                    if len(rows) == 0:
-                        break
-                    for row in rows:
-                        edsmid = row[1]
-                        rec = edsmbodyarray[edsmid]
-                        rec[0] = row[0]
-                        rec[1] = edsmid
-                        rec[2] = row[2]
-                        i += 1
-                        if edsmid > maxedsmid:
-                            maxedsmid = edsmid
-                    sys.stderr.write('.')
-                    if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmbodyid, edsmid))
-                    sys.stderr.flush()
-                    timer.time('loadedsmbody', len(rows))
-                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmbodyid))
-
+            if loadedsmbodies:
+                self.loadedsmbodies(conn, timer)
+            
+            if loadeddbsys:
+                self.loadeddbsystems(conn, timer)
 
         finally:
             timer.printstats()
+
+    def loadedsmsystems(self, conn, timer):
+        c = makestreamingcursor(conn)
+        c.execute('SELECT MAX(EdsmId) FROM Systems_EDSM')
+        row = c.fetchone()
+        maxedsmsysid = row[0]
+
+        timer.time('sql')
+
+        if maxedsmsysid:
+            sys.stderr.write('Loading EDSM System IDs\n')
+            c = makestreamingcursor(conn)
+            c.execute('SELECT Id, EdsmId, TimestampSeconds FROM Systems_EDSM')
+
+            edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
+            self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
+            timer.time('sql')
+
+            i = 0
+            maxedsmid = 0
+            while True:
+                rows = c.fetchmany(10000)
+                timer.time('sqledsmsys', len(rows))
+                if len(rows) == 0:
+                    break
+                for row in rows:
+                    edsmid = row[1]
+                    rec = edsmsysarray[edsmid]
+                    rec[0] = row[0]
+                    rec[1] = edsmid
+                    rec[2] = row[2]
+                    i += 1
+                    if edsmid > maxedsmid:
+                        maxedsmid = edsmid
+                sys.stderr.write('.')
+                if (i % 640000) == 0:
+                    sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmsysid, maxedsmid))
+                sys.stderr.flush()
+                timer.time('loadedsmsys', len(rows))
+            sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmsysid))
+
+    def loadeddbsystems(self, conn, timer):
+        c = makestreamingcursor(conn)
+        c.execute('SELECT MAX(EddbId) FROM Systems_EDDB')
+        row = c.fetchone()
+        maxeddbsysid = row[0]
+
+        timer.time('sql')
+
+        if maxeddbsysid:
+            sys.stderr.write('Loading EDDB System IDs\n')
+            c = makestreamingcursor(conn)
+            c.execute('SELECT Id, EddbId, TimestampSeconds FROM Systems_EDDB')
+
+            eddbsysarray = numpy.zeros(maxeddbsysid + 1048576, dtype=[('sysid', '<i4'), ('eddbid', '<i4'), ('timestampseconds', '<i4')])
+            self.eddbsysids = eddbsysarray.view(numpy.core.records.recarray)
+            timer.time('sql')
+
+            i = 0
+            maxeddbid = 0
+            while True:
+                rows = c.fetchmany(10000)
+                timer.time('sqleddbsys', len(rows))
+                if len(rows) == 0:
+                    break
+                for row in rows:
+                    eddbid = row[1]
+                    rec = eddbsysarray[eddbid]
+                    rec[0] = row[0]
+                    rec[1] = eddbid
+                    rec[2] = row[2]
+                    i += 1
+                    if eddbid > maxeddbid:
+                        maxeddbid = eddbid
+                sys.stderr.write('.')
+                if (i % 640000) == 0:
+                    sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxeddbsysid, maxeddbid))
+                sys.stderr.flush()
+                timer.time('loadeddbsys', len(rows))
+            sys.stderr.write('  {0} / {1}\n'.format(i, maxeddbsysid))
+
+    def loadedsmbodies(self, conn, timer):
+        c = makestreamingcursor(conn)
+        c.execute('SELECT MAX(EdsmId) FROM SystemBodies_EDSM')
+        row = c.fetchone()
+        maxedsmbodyid = row[0]
+
+        timer.time('sql')
+
+        if maxedsmbodyid:
+            sys.stderr.write('Loading EDSM System IDs\n')
+            c = makestreamingcursor(conn)
+            c.execute('SELECT Id, EdsmId, TimestampSeconds FROM SystemBodies_EDSM')
+
+            edsmbodyarray = numpy.zeros(maxedsmbodyid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
+            self.edsmbodyids = edsmbodyarray.view(numpy.core.records.recarray)
+            timer.time('sql')
+
+            i = 0
+            maxedsmid = 0
+            while True:
+                rows = c.fetchmany(10000)
+                timer.time('sqledsmbody', len(rows))
+                if len(rows) == 0:
+                    break
+                for row in rows:
+                    edsmid = row[1]
+                    rec = edsmbodyarray[edsmid]
+                    rec[0] = row[0]
+                    rec[1] = edsmid
+                    rec[2] = row[2]
+                    i += 1
+                    if edsmid > maxedsmid:
+                        maxedsmid = edsmid
+                sys.stderr.write('.')
+                if (i % 640000) == 0:
+                    sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmbodyid, maxedsmid))
+                sys.stderr.flush()
+                timer.time('loadedsmbody', len(rows))
+            sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmbodyid))
+
+    def loadparentsets(self, conn, timer):
+        sys.stderr.write('Loading Parent Sets\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT Id, BodyID, ParentJson FROM ParentSets')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlparents', len(rows))
+        for row in rows:
+            self.parentsets[(int(row[1]),row[2])] = int(row[0])
+        timer.time('loadparents', len(rows))
+
+    def loadsoftware(self, conn, timer):
+        sys.stderr.write('Loading Software\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT Id, Name FROM Software')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlsoftware', len(rows))
+        for row in rows:
+            self.software[row[1]] = int(row[0])
+        timer.time('loadsoftware', len(rows))
+
+    def loadbodydesigs(self, conn, timer):
+        sys.stderr.write('Loading Body Designations\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT Id, BodyDesignation FROM SystemBodyDesignations WHERE IsUsed = 1')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlbodydesigs', len(rows))
+        for row in rows:
+            self.bodydesigs[row[1]] = int(row[0])
+        timer.time('loadbodydesigs', len(rows))
+
+    def loadnamedbodies(self, conn, timer):
+        sys.stderr.write('Loading Named Bodies\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT nb.Id, nb.BodyName, nb.SystemName, nb.SystemId, nb.BodyID, nb.BodyCategory, nb.ArgOfPeriapsis, nb.ValidFrom, nb.ValidUntil, nb.IsRejected FROM SystemBodyNames nb JOIN SystemBodies_Named sbn ON sbn.Id = nb.Id')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlbodyname', len(rows))
+        for row in rows:
+            bi = EDDNBody(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
+            if bi.systemid not in self.namedbodies:
+                self.namedbodies[bi.systemid] = {}
+            snb = self.namedbodies[bi.systemid]
+            if bi.name not in snb:
+                snb[bi.name] = bi
+            elif type(snb[bi.name]) is not list:
+                snb[bi.name] = [snb[bi.name]]
+                snb[bi.name] += [bi]
+            else:
+                snb[bi.name] += [bi]
+
+        timer.time('loadbodyname')
+
+    def loadnamedsystems(self, conn, timer):
+        sys.stderr.write('Loading Named Systems\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns JOIN Systems_Named sn ON sn.Id = ns.Id')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlname', len(rows))
+
+        for row in rows:
+            si = EDDNSystem(row[0], row[1], row[2], row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105)
+            if si.name not in self.namedsystems:
+                self.namedsystems[si.name] = si
+            elif type(self.namedsystems[si.name]) is not list:
+                self.namedsystems[si.name] = [self.namedsystems[si.name]]
+                self.namedsystems[si.name] += [si]
+            else:
+                self.namedsystems[si.name] += [si]
+
+        timer.time('loadname', len(rows))
+
+    def loadregions(self, conn, timer):
+        sys.stderr.write('Loading Regions\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT Id, Name, X0, Y0, Z0, SizeX, SizeY, SizeZ, RegionAddress, IsHARegion FROM Regions')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlregion', len(rows))
+        for row in rows:
+            ri = EDDNRegion(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01')
+            self.regions[ri.name.lower()] = ri
+            if ri.regionaddr is not None:
+                self.regionaddrs[ri.regionaddr] = ri
+
+        timer.time('loadregion', len(rows))
+
+    def loadfactions(self, conn, timer):
+        sys.stderr.write('Loading Factions\n')
+        c = makestreamingcursor(conn)
+        c.execute('SELECT Id, Name, Government, Allegiance FROM Factions')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlfactions')
+
+        for row in rows:
+            fi = EDDNFaction(row[0], row[1], row[2], row[3])
+            if fi.name not in self.factions:
+                self.factions[fi.name] = fi
+            elif type(self.factions[fi.name]) is not list:
+                self.factions[fi.name] = [self.factions[fi.name]]
+                self.factions[fi.name] += [fi]
+            else:
+                self.factions[fi.name] += [fi]
+
+        timer.time('loadfactions')
+
+    def commit(self):
+        self.conn.commit()
 
     def findmodsysaddr(self, part, modsysaddr, sysname, starpos, start, end, search):
         arr = part.view(numpy.ndarray)
@@ -470,7 +522,7 @@ class EDDNSysDB(object):
     def _findsystem(self, cursor, sysname, starpos, sysaddr, syslist):
         systems = [ EDDNSystem(row[0], row[1], self._namestr(row[2]), row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105) for row in cursor ]
         for system in systems:
-            if system.name.lower() == sysname.lower() and system.x == starpos[0] and system.y == starpos[1] and system.z == starpos[2] and (sysaddr is None or sysaddr == system.id64):
+            if (sysname is None or system.name.lower() == sysname.lower()) and system.x == starpos[0] and system.y == starpos[1] and system.z == starpos[2] and (sysaddr is None or sysaddr == system.id64):
                 return system
         syslist += systems
         return None
@@ -518,7 +570,7 @@ class EDDNSysDB(object):
                 systems = [systems]
             for system in systems:
                 if system.name == sysname and system.x == starpos[0] and system.y == starpos[1] and system.z == starpos[2] and (sysaddr is None or sysaddr == system.id64):
-                    return system
+                    return (system, None, None)
 
         timer.time('sysquery', 0)
         pgsysmatch = pgsysre.match(sysname)
@@ -563,7 +615,7 @@ class EDDNSysDB(object):
                         system = self.lookupsystem(ri, sysname, starpos, modsysaddr, systems, timer)
                         timer.time('sysquerylookup')
                         if system is not None:
-                            return system
+                            return (system, None, None)
 
                     c = self.conn.cursor()
                     c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
@@ -571,15 +623,41 @@ class EDDNSysDB(object):
                     timer.time('sysselectmaddr')
 
                     if system is not None:
-                        return system
+                        return (system, None, None)
                 else:
-                    sys.stderr.write('Unable to resolve system address for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, starpos[0], starpos[1], starpos[2]))
+                    errmsg = 'Unable to resolve system address for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, starpos[0], starpos[1], starpos[2])
+                    sys.stderr.write(errmsg)
                     sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
-                    raise ValueError('Unable to resolve system address')
+                    return (
+                        None,
+                        errmsg,
+                        [{
+                            'id': int(s.id),
+                            'id64': int(s.id64),
+                            'x': float(s.x),
+                            'y': float(s.y),
+                            'z': float(s.z),
+                            'name': s.name
+                        } for s in systems]
+                    )
+                    #raise ValueError('Unable to resolve system address')
             else:
-                sys.stderr.write('Region {5} not found for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, starpos[0], starpos[1], starpos[2], regionname))
+                errmsg = 'Region {5} not found for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, starpos[0], starpos[1], starpos[2], regionname)
+                sys.stderr.write(errmsg)
                 sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
-                raise ValueError('Region not found')
+                return (
+                    None,
+                    errmsg,
+                    [{
+                        'id': int(s.id),
+                        'id64': int(s.id64),
+                        'x': float(s.x),
+                        'y': float(s.y),
+                        'z': float(s.z),
+                        'name': s.name
+                    } for s in systems]
+                )
+                #raise ValueError('Region not found')
         
         if sysaddr is not None:
             modsysaddr = self.sysaddrtomodsysaddr(sysaddr)
@@ -589,7 +667,7 @@ class EDDNSysDB(object):
             timer.time('sysselectmaddr')
 
             if system is not None:
-                return system
+                return (system, None, None)
 
         c = self.conn.cursor()
         c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns JOIN Systems_Named sn ON sn.Id = ns.Id WHERE sn.Name = %s', (sysname,))
@@ -598,7 +676,7 @@ class EDDNSysDB(object):
         timer.time('sysselectname')
 
         if system is not None:
-            return system
+            return (system, None, None)
 
         timer.time('sysquery', 0)
         edtsid64 = None
@@ -618,7 +696,7 @@ class EDDNSysDB(object):
             timer.time('sysselectmaddr')
 
             if system is not None:
-                return system
+                return (system, None, None)
 
         elif sysaddr is not None and (edtsid64 is None or edtsid64 == sysaddr):
             timer.time('sysquery', 0)
@@ -629,7 +707,7 @@ class EDDNSysDB(object):
             timer.time('sysselectmaddr')
 
             if system is not None:
-                return system
+                return (system, None, None)
 
         timer.time('sysquery', 0)
         c = self.conn.cursor()
@@ -639,7 +717,7 @@ class EDDNSysDB(object):
         timer.time('sysselectname')
 
         if system is not None:
-            return system
+            return (system, None, None)
 
         if ri is not None and modsysaddr is not None:
             vx = int((starpos[0] + 49985) * 32)
@@ -662,7 +740,7 @@ class EDDNSysDB(object):
                         '(%s,    %s,               %s,       %s,    %s,    %s,   %s,        %s,   %s)',
                          (sysid, modsysaddr,       ri.id,    mid1a, mid1b, mid2, sz,        mid3, seq)
                     )
-                return EDDNSystem(sysid, self.modsysaddrtosysaddr(modsysaddr), sysname, starpos[0], starpos[1], starpos[2])
+                return (EDDNSystem(sysid, self.modsysaddrtosysaddr(modsysaddr), sysname, starpos[0], starpos[1], starpos[2]), None, None)
         elif sysaddr is not None:
             modsysaddr = self.sysaddrtomodsysaddr(sysaddr)
             vx = int((starpos[0] + 49985) * 32)
@@ -690,24 +768,55 @@ class EDDNSysDB(object):
                     '(%s,    1)',
                      (sysid, )
                 )
-                return EDDNSystem(sysid, sysaddr, sysname, starpos[0], starpos[1], starpos[2])
+                return (EDDNSystem(sysid, sysaddr, sysname, starpos[0], starpos[1], starpos[2]), None, None)
 
-        #sys.stderr.write('Cannot find system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, starpos[0], starpos[1], starpos[2]))
+        vx = int((starpos[0] + 49985) * 32)
+        vy = int((starpos[1] + 40985) * 32)
+        vz = int((starpos[2] + 24105) * 32)
+        raddr = ((vz // 40960) << 13) | ((vy // 40960) << 7) | (vx // 40960)
+        
+        
+        for mc in range(0,8):
+            rx = (vx % 40960) >> mc
+            ry = (vy % 40960) >> mc
+            rz = (vz % 40960) >> mc
+            baddr = (raddr << 40) | (mc << 37) | (rz << 30) | (ry << 23) | (rx << 16)
+            c = self.conn.cursor()
+            c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress >= %s AND ModSystemAddress < %s', (baddr,baddr + 65536))
+            for row in c:
+                if row[3] >= vx - 2 and row[3] <= vx + 2 and row[4] >= vy - 2 and row[4] <= vy + 2 and row[5] >= vz - 2 and row[5] <= vz + 2:
+                    systems += [ EDDNSystem(row[0], row[1], self._namestr(row[2]), row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105) ]
+
+        timer.time('sysselectmaddr')
+
+        errmsg = 'Unable to resolve system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, starpos[0], starpos[1], starpos[2])
+        #sys.stderr.write(errmsg)
         #sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
         #raise ValueError('Unable to find system')
-        return None
+        return (
+            None,
+            errmsg,
+            [{
+                'id': int(s.id),
+                'id64': int(s.id64),
+                'x': float(s.x),
+                'y': float(s.y),
+                'z': float(s.z),
+                'name': s.name
+            } for s in systems]
+        )
 
-    def getstation(self, timer, name, sysname, marketid, timestamp, system = None, stationtype = None, bodyname = None, bodyid = None, bodytype = None):
+    def getstation(self, timer, name, sysname, marketid, timestamp, system = None, stationtype = None, bodyname = None, bodyid = None, bodytype = None, eventtype = None, test = False):
         sysid = system.id if system is not None else None
 
         if name is None or name == '':
-            return None
+            return (None, 'No station name')
 
         if sysname is None or sysname == '':
-            return None
+            return (None, 'No system name')
 
         if timestamp is None:
-            return None
+            return (None, 'No timestamp')
 
         if stationtype is not None and stationtype == '':
             stationtype = None
@@ -721,9 +830,23 @@ class EDDNSysDB(object):
         if marketid is not None and marketid == 0:
             marketid = None
 
+        if (stationtype is not None and stationtype == 'FleetCarrier') or carriernamere.match(name):
+            sysid = None
+            sysname = ''
+            bodyname = None
+            bodytype = None
+            bodyid = None
+            stationtype = 'FleetCarrier'
+
+        stationtype_location = None
+
+        if eventtype is not None and eventtype == 'Location' and stationtype is not None and stationtype == 'Bernal' and timestamp > ed332date:
+            stationtype_location = 'Bernal'
+            stationtype = 'Ocellus'
+
         c = self.conn.cursor()
-        c.execute('SELECT Id, MarketId, StationName, SystemName, SystemId, StationType, Body, BodyID, IsRejected, ValidFrom, ValidUntil FROM Stations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
-        stations = [ EDDNStation(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8] == b'\x01', row[9], row[10]) for row in c ]
+        c.execute('SELECT Id, MarketId, StationName, SystemName, SystemId, StationType, COALESCE(StationType_Location, StationType), Body, BodyID, IsRejected, ValidFrom, ValidUntil, Test FROM Stations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
+        stations = [ EDDNStation(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01', row[10], row[11], row[12] == b'\x01') for row in c ]
 
         candidates = []
 
@@ -762,11 +885,38 @@ class EDDNSysDB(object):
 
             candidates += [ (station, replace) ]
 
+        if len(candidates) > 1 and bodyid is not None:
+            bidcandidates = [ c for c in candidates if c[0].bodyid is not None ]
+            if len(bidcandidates) == 1:
+                candidates = bidcandidates
+
+        if len(candidates) > 1 and marketid is not None:
+            midcandidates = [ c for c in candidates if c[0].marketid is not None ]
+            if len(midcandidates) == 1:
+                candidates = midcandidates
+
+        if len(candidates) > 1 and stationtype is not None:
+            stcandidates = [ c for c in candidates if c[0].type is not None ]
+            if len(stcandidates) == 1:
+                candidates = stcandidates
+
+        if len(candidates) > 1 and sysid is not None:
+            sidcandidates = [ c for c in candidates if c[0].systemid is not None ]
+            if len(sidcandidates) == 1:
+                candidates = sidcandidates
+
+        if len(candidates) > 1 and not test:
+            tcandidates = [ c for c in candidates if not c[0].test ]
+            if len(tcandidates) == 1:
+                candidates = tcandidates
+
         if len(candidates) > 1:
             candidates = [ c for c in candidates if not c[0].isrejected and c[0].validfrom <= timestamp and c[0].validuntil >= timestamp ]
 
         if len(candidates) == 2 and candidates[0][0].validfrom > candidates[1][0].validfrom and candidates[0][0].validuntil < candidates[1][0].validuntil:
             candidates = [ candidates[0] ]
+        elif len(candidates) == 2 and candidates[1][0].validfrom > candidates[0][0].validfrom and candidates[1][0].validuntil < candidates[0][0].validuntil:
+            candidates = [ candidates[1] ]
 
         if len(candidates) == 1:
             station, replace = candidates[0]
@@ -774,33 +924,100 @@ class EDDNSysDB(object):
             if len(replace) != 0:
                 station = self.updatestation(station, **replace)
 
-            return station
+            return (station, None, None)
         elif len(candidates) > 1:
             #import pdb; pdb.set_trace()
-            return None
+            return (
+                None, 
+                'More than 1 match', 
+                [{
+                    'station': {
+                        'id': s.id,
+                        'stationName': s.name,
+                        'marketId': s.marketid,
+                        'systemName': s.systemname,
+                        'systemId': s.systemid,
+                        'stationType': s.type,
+                        'locationStationType': s.loctype,
+                        'bodyName': s.body,
+                        'bodyId': s.bodyid,
+                        'isRejected': True if s.isrejected else False,
+                        'validFrom': s.validfrom.isoformat(),
+                        'validUntil': s.validuntil.isoformat(),
+                        'test': True if s.test else False
+                    },
+                    'replace': r
+                } for s, r in candidates])
         
         if bodyname is not None and not ((bodytype is None and bodyname != name) or bodytype == 'Planet'):
             bodyname = None
 
-        validfrom = '2014-01-01 00:00:00'
-        validuntil = '9999-12-31 00:00:00'
+        validfrom = datetime.strptime('2014-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+        validuntil = datetime.strptime('9999-12-31 00:00:00', '%Y-%m-%d %H:%M:%S')
 
         if stationtype is not None:
             if stationtype == 'SurfaceStation':
                 validuntil = ed330date
             elif stationtype in ['CraterPort', 'CraterOutpost']:
                 validfrom = ed330date
+            elif stationtype == 'Ocellus':
+                validfrom = ed332date
+                stationtype_location = 'Bernal'
+            elif stationtype == 'Bernal' and timestamp < ed332date:
+                validuntil = ed332date
+
+        if (sysid is None and sysname != '') or stationtype is None or marketid is None:
+            return (
+                None,
+                'Station mismatch',
+                [{
+                    'MarketId': marketid,
+                    'StationName': name,
+                    'SystemName': sysname,
+                    'SystemId': sysid,
+                    'StationType': stationtype,
+                    'LocationStationType': stationtype_location,
+                    'Body': bodyname,
+                    'BodyID': bodyid,
+                    'IsTest': 1 if test else 0
+                }]
+            )
 
         c = self.conn.cursor()
         c.execute(
             'INSERT INTO Stations ' +
-            '(MarketId, StationName, SystemName, SystemId, StationType, Body,     BodyID, ValidFrom, ValidUntil) VALUES ' +
-            '(%s,       %s,          %s,         %s,       %s,          %s,       %s,     %s,        %s)', 
-             (marketid, name,        sysname,    sysid,    stationtype, bodyname, bodyid, validfrom, validuntil))
-        return EDDNStation(c.lastrowid, marketid, name, sysname, sysid, stationtype, bodyname, bodyid, False, '2014-01-01', '9999-12-31')
+            '(MarketId, StationName, SystemName, SystemId, StationType, StationType_Location, Body,     BodyID, ValidFrom, ValidUntil, Test) VALUES ' +
+            '(%s,       %s,          %s,         %s,       %s,          %s,                   %s,       %s,     %s,        %s,         %s)', 
+             (marketid, name,        sysname,    sysid,    stationtype, stationtype_location, bodyname, bodyid, validfrom, validuntil, test))
+        return (EDDNStation(c.lastrowid, marketid, name, sysname, sysid, stationtype, stationtype_location or stationtype, bodyname, bodyid, False, validfrom, validuntil, test), None, None)
 
     def insertbodyparents(self, timer, scanbodyid, system, bodyid, parents):
-        pass
+        if parents is not None and bodyid is not None:
+            parentjson = json.dumps(parents)
+            
+            if (bodyid, parentjson) not in self.parentsets:
+                c = self.conn.cursor()
+                c.execute(
+                    'INSERT INTO ParentSets ' +
+                    '(BodyId, ParentJson) VALUES ' + 
+                    '(%s,     %s)',
+                     (bodyid, parentjson))
+                self.parentsets[(bodyid, parentjson)] = c.lastrowid
+
+            parentsetid = self.parentsets[(bodyid, parentjson)]
+
+            c = self.conn.cursor()
+            c.execute(
+                'INSERT IGNORE INTO SystemBodies_ParentSet ' +
+                '(Id, ParentSetId) VALUES ' +
+                '(%s, %s)',
+                 (scanbodyid, parentsetid))
+
+    def insertsoftware(self, softwarename):
+        if softwarename not in self.software:
+            c = self.conn.cursor()
+            c.execute('INSERT INTO Software (Name) VALUES (%s)', (softwarename,))
+            self.software[softwarename] = c.lastrowid
 
     def getbody(self, timer, name, sysname, bodyid, system, body, timestamp):
         if system.id in self.namedbodies and name in self.namedbodies[system.id]:
@@ -817,9 +1034,9 @@ class EDDNSysDB(object):
 
             if len(rows) > 1 and name == sysname:
                 if 'PlanetClass' in body:
-                    rows = [row for row in rows if row.planet != 0]
+                    rows = [row for row in rows if row.category == 6]
                 elif 'StarType' in body:
-                    rows = [row for row in rows if row.planet == 0]
+                    rows = [row for row in rows if row.category == 2]
 
             if multimatch and 'Periapsis' in body:
                 aop = body['Periapsis']
@@ -836,139 +1053,155 @@ class EDDNSysDB(object):
 
             timer.time('bodylookupname')
             if len(rows) == 1:
-                return rows[0]
+                return (rows[0], None, None)
 
         ispgname = name.startswith(sysname)
-        if name == sysname and 'SemiMajorAxis' in body and body['SemiMajorAxis'] is not None:
-            ispgname = False
+        if name == sysname:
+            if 'SemiMajorAxis' in body and body['SemiMajorAxis'] is not None:
+                ispgname = False
+            elif bodyid is not None and bodyid != 0:
+                ispgname = False
+            elif 'BodyType' in body and body['BodyType'] != 'Star':
+                ispgname = False
 
+        desigid = None
         if ispgname:
             timer.time('bodyquery', 0)
             desig = name[len(sysname):]
             match = pgbodyre.match(desig)
-            if match:
-                stars = match[1]
-                belt = match[2]
-                cluster = match[3]
-                planetstr = match[4]
-                ring1 = match[5]
-                moon1str = match[6]
-                ring2 = match[7]
-                moon2str = match[8]
-                ring3 = match[9]
-                moon3str = match[10]
-                isbelt = 1 if belt is not None else 0
-                moon1isring = 1 if ring1 is not None else 0
-                moon2isring = 1 if ring2 is not None else 0
-                moon3isring = 1 if ring3 is not None else 0
-                hasbodyid = 1 if bodyid is not None else 0
 
-                bodycategory = 0
-                planet = 0
-                moon1 = 0
-                moon2 = 0
-                moon3 = 0
+            if desig in self.bodydesigs:
+                desigid = self.bodydesigs[desig]
+            else:
+                cursor = self.conn.cursor()
+                cursor.execute('SELECT Id, BodyDesignation FROM SystemBodyDesignations WHERE BodyDesignation = %s', (desig,))
+                row = cursor.fetchone()
+                
+                if row and row[1] == desig:
+                    desigid = int(row[0])
+                    self.bodydesigs[desig] = desigid
+                    cursor = self.conn.cursor()
+                    cursor.execute('UPDATE SystemBodyDesignations SET IsUsed = 1 WHERE Id = %s', (desigid,))
+                elif match:
+                    stars = match['stars']
+                    nebula = match['nebula']
+                    belt = match['belt']
+                    cluster = match['cluster']
+                    stellarcomet = match['stellarcomet']
+                    planetstr = match['planet']
+                    ring1 = match['planetring']
+                    comet1 = match['planetcomet']
+                    moon1str = match['moon1']
+                    ring2 = match['moon1ring']
+                    comet2 = match['moon1comet']
+                    moon2str = match['moon2']
+                    ring3 = match['moon2ring']
+                    comet3 = match['moon2comet']
+                    moon3str = match['moon3']
 
-                if planetstr is not None:
-                    if '+' in planetstr:
-                        planetlist = planetstr.split('+')
-                        planet = int(planetlist[0])
-                        moon1 = int(planetlist[-1]) - planet
-                        bodycategory = 5
-                    else:
-                        planet = int(planetstr)
-                        bodycategory = 6
-                elif belt is not None:
-                    planet = ord(belt) - 64
-                    if cluster is not None:
-                        moon1 = int(cluster)
-                        bodycategory = 4
-                    else:
-                        bodycategory = 3
-                elif stars is not None and len(stars) > 1:
-                    bodycategory = 1
-                else:
-                    bodycategory = 2
-                    
-                if bodycategory == 6:
-                    if moon1str is not None:
-                        if '+' in moon1str:
-                            moon1list = moon1str.split('+')
-                            moon1 = ord(moon1list[0]) - 96
-                            moon2 = ord(moon1list[-1]) - 96 - moon1
-                            bodycategory = 8
+                    bodycategory = 0
+                    planet = 0
+                    moon1 = 0
+                    moon2 = 0
+                    moon3 = 0
+
+                    if planetstr is not None:
+                        if '+' in planetstr:
+                            planetlist = planetstr.split('+')
+                            planet = int(planetlist[0])
+                            moon1 = int(planetlist[-1]) - planet
+                            bodycategory = 5
                         else:
-                            moon1 = ord(moon1str) - 96
-                            bodycategory = 9
-                    elif ring1 is not None:
-                        moon1 = ord(ring1) - 64
-                        bodycategory = 7
-
-                if bodycategory == 9:
-                    if moon2str is not None:
-                        if '+' in moon2str:
-                            moon2list = moon2str.split('+')
-                            moon2 = ord(moon2list[0]) - 96
-                            moon3 = ord(moon2list[-1]) - 96 - moon2
-                            bodycategory = 11
+                            planet = int(planetstr)
+                            bodycategory = 6
+                    elif belt is not None:
+                        planet = ord(belt) - 64
+                        if cluster is not None:
+                            moon1 = int(cluster)
+                            bodycategory = 4
                         else:
-                            moon2 = ord(moon2str) - 96
-                            bodycategory = 12
-                    elif ring2 is not None:
-                        moon2 = ord(ring2) - 64
-                        bodycategory = 10
+                            bodycategory = 3
+                    elif stellarcomet is not None:
+                        bodycategory = 15
+                    elif nebula is not None:
+                        bodycategory = 19
+                    elif stars is not None and len(stars) > 1:
+                        bodycategory = 1
+                    else:
+                        bodycategory = 2
+                        
+                    if bodycategory == 6:
+                        if moon1str is not None:
+                            if '+' in moon1str:
+                                moon1list = moon1str.split('+')
+                                moon1 = ord(moon1list[0]) - 96
+                                moon2 = ord(moon1list[-1]) - 96 - moon1
+                                bodycategory = 8
+                            else:
+                                moon1 = ord(moon1str) - 96
+                                bodycategory = 9
+                        elif ring1 is not None:
+                            moon1 = ord(ring1) - 64
+                            bodycategory = 7
+                        elif comet1 is not None:
+                            moon1 = int(comet1)
+                            bodycategory = 16
 
-                if bodycategory == 12:
-                    if moon3str is not None:
-                        moon3 = ord(moon3str) - 96
-                        bodycategory = 14
-                    elif ring3 is not None:
-                        moon3 = ord(ring3) - 64
-                        bodycategory = 13
+                    if bodycategory == 9:
+                        if moon2str is not None:
+                            if '+' in moon2str:
+                                moon2list = moon2str.split('+')
+                                moon2 = ord(moon2list[0]) - 96
+                                moon3 = ord(moon2list[-1]) - 96 - moon2
+                                bodycategory = 11
+                            else:
+                                moon2 = ord(moon2str) - 96
+                                bodycategory = 12
+                        elif ring2 is not None:
+                            moon2 = ord(ring2) - 64
+                            bodycategory = 10
+                        elif comet2 is not None:
+                            moon2 = int(comet2)
+                            bodycategory = 17
 
-                star = 0
-                if stars is not None:
-                    for i in range(ord(stars[0]) - 65, ord(stars[-1]) - 64):
-                        star |= 1 << i
+                    if bodycategory == 12:
+                        if moon3str is not None:
+                            moon3 = ord(moon3str) - 96
+                            bodycategory = 14
+                        elif ring3 is not None:
+                            moon3 = ord(ring3) - 64
+                            bodycategory = 13
+                        elif comet3 is not None:
+                            moon3 = int(comet3)
+                            bodycategory = 18
+
+                    star = 0
+                    if stars is not None:
+                        for i in range(ord(stars[0]) - 65, ord(stars[-1]) - 64):
+                            star |= 1 << i
+
+                    import pdb; pdb.set_trace()
+                    return (
+                        None,
+                        'Body designation not in database',
+                        [{
+                            'Designation': desig,
+                            'BodyCategory': bodycategory,
+                            'Stars': stars,
+                            'Planet': planet,
+                            'Moon1': moon1,
+                            'Moon2': moon2,
+                            'Moon3': moon3
+                        }]
+                    )
 
             timer.time('bodyquerypgre')
 
-            if match and uselookup:
-                retbody = None
-                part = []
-                if system.id < len(self.systembodyptrs):
-                    packed = moon3 | (moon3isring << 7) | (moon2 << 8) | (moon2isring << 15) | (moon1 << 16) | (moon1isring << 23) | (planet << 24) | (isbelt << 31) | (star << 32)
-                    ptr = self.systembodyptrs[system.id]
-                    part = self.pgbodies[ptr.first:ptr.last].view(numpy.ndarray)
-                    if len(part) >= 1:
-                        start = part.searchsorted(numpy.array((packed << 16, 0, 0), part.dtype))
-                        if start < len(part) and (part[start][0] >> 16) == packed and part[start][1] == system.id:
-                            rec = part[start]
-                            xhasbodyid = int((rec[0] & 0x8000) >> 15)
-                            xbodyid = int(rec[0] & 0x7FFF) if xhasbodyid != 0 else None
-                            sysbodyid = int(rec[2])
-                            if sysbodyid != 0 and xbodyid is None or bodyid is None or bodyid == xbodyid:
-                                if xbodyid is None and bodyid is not None:
-                                    part[start][0] |= bodyid | 0x8000
-                                    cursor = self.conn.cursor()
-                                    cursor.execute('UPDATE SystemBodies SET HasBodyId = 1, BodyID = %s WHERE Id = %s', (bodyid, sysbodyid))
-                                retbody = EDDNBody(sysbodyid, name, sysname, system.id, xbodyid or bodyid, planet, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0)
-                            else:
-                                #import pdb; pdb.set_trace()
-                                rec[1] = 0
-                                rec[2] = 0
-                timer.time('bodylookuppg')
-                if retbody is not None:
-                    return retbody
-
-        #if ispgname and match and uselookup and len(part) >= 1:
-        #    import pdb; pdb.set_trace()
-
         timer.time('bodyquery', 0)
         cursor = self.conn.cursor()
-        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, Planet, ArgOfPeriapsis FROM SystemBodyNames sn WHERE SystemId = %s AND BodyName = %s AND IsNamedBody = 1', (system.id, name))
+        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND BodyName = %s AND IsNamedBody = 1', (system.id, name))
         rows = cursor.fetchall()
-        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, Planet, ArgOfPeriapsis FROM SystemBodyNames sn WHERE SystemId = %s AND BodyName = %s AND IsNamedBody = 0', (system.id, name))
+        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND BodyName = %s AND IsNamedBody = 0', (system.id, name))
         rows += cursor.fetchall()
         timer.time('bodyselectname')
         ufrows = rows
@@ -980,9 +1213,9 @@ class EDDNSysDB(object):
 
         if len(rows) > 1 and name == sysname:
             if 'PlanetClass' in body:
-                rows = [row for row in rows if row[5] != 0]
+                rows = [row for row in rows if row[5] == 'PlanetaryBody']
             elif 'StarType' in body:
-                rows = [row for row in rows if row[5] == 0]
+                rows = [row for row in rows if row[5] == 'StellarBody']
 
         if multimatch and 'Periapsis' in body:
             aop = body['Periapsis']
@@ -998,15 +1231,29 @@ class EDDNSysDB(object):
                 cursor = self.conn.cursor()
                 cursor.execute('UPDATE SystemBodies SET HasBodyId = 1, BodyID = %s WHERE Id = %s', (bodyid, row[0]))
                 timer.time('bodyupdateid')
-            return EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0)
+            return (EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0), None, None)
         elif len(rows) > 1:
-            return None
-            raise ValueError('Multiple matches')
+            return (
+                None,
+                'Multiple body matches',
+                [{
+                    'id': int(row[0]),
+                    'bodyName': row[1],
+                    'systemName': row[2],
+                    'systemId': int(row[3]),
+                    'bodyId': int(row[4]) if row[4] is not None else None,
+                    'bodyCategory': int(row[5]) if row[5] is not None else None,
+                    'argOfPeriapsis': float(row[6]) if row[6] is not None else None,
+                    'validFrom': row[7].isoformat(),
+                    'validUntil': row[8].isoformat(),
+                    'isRejected': True if row[9] else False
+                } for row in rows]
+            )
         else:
             cursor = self.conn.cursor()
-            cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, Planet, ArgOfPeriapsis FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (system.id, ))
+            cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (system.id, ))
             allrows = cursor.fetchall()
-            cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, Planet, ArgOfPeriapsis FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (system.id, ))
+            cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (system.id, ))
             allrows += cursor.fetchall()
             frows = [ r for r in allrows if r[1].lower() == name.lower() ]
 
@@ -1017,33 +1264,51 @@ class EDDNSysDB(object):
                         systems = [systems]
                     for xsystem in systems:
                         cursor = self.conn.cursor()
-                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, Planet, ArgOfPeriapsis FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (xsystem.id, ))
+                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (xsystem.id, ))
                         allrows += cursor.fetchall()
-                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, Planet, ArgOfPeriapsis FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (xsystem.id, ))
+                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (xsystem.id, ))
                         allrows += cursor.fetchall()
                 frows = [ r for r in allrows if r[1].lower() == name.lower() ]
                         
-                import pdb; pdb.set_trace()
+                #import pdb; pdb.set_trace()
+                return (
+                    None, 
+                    'Body Mismatch',
+                    [{
+                        'id': int(row[0]),
+                        'bodyName': row[1],
+                        'systemName': row[2],
+                        'systemId': int(row[3]),
+                        'bodyId': int(row[4]) if row[4] is not None else None,
+                        'bodyCategory': int(row[5]) if row[5] is not None else None,
+                        'argOfPeriapsis': float(row[6]) if row[6] is not None else None,
+                        'validFrom': row[7].isoformat(),
+                        'validUntil': row[8].isoformat(),
+                        'isRejected': True if row[9] else False
+                    } for row in rows]
+                )
 
-            if ispgname and match:
+            if ispgname and desigid is not None:
                 cursor = self.conn.cursor()
                 cursor.execute(
                     'INSERT INTO SystemBodies ' +
-                    '(SystemId,  HasBodyId, BodyId,      BodyCategory, Stars, IsBelt, Planet, Moon1IsRing, Moon1, Moon2IsRing, Moon2, Moon3IsRing, Moon3, IsNamedBody) VALUES ' +
-                    '(%s,        %s,        %s,          %s,           %s,    %s,     %s,     %s,          %s,    %s,          %s,    %s,          %s,    0)', 
-                     (system.id, hasbodyid, bodyid or 0, bodycategory, star,  isbelt, planet, moon1isring, moon1, moon2isring, moon2, moon3isring, moon3)
+                    '(SystemId,  HasBodyId, BodyId,      BodyDesignationId, IsNamedBody) VALUES ' +
+                    '(%s,        %s,        %s,          %s,                0)', 
+                     (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
                 )
                 timer.time('bodyinsertpg')
-                return EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0)
+                return (EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0), None, None)
                 
-            return None
-            import pdb; pdb.set_trace()
+            if not ispgname and pgsysre.match(name):
+                return (None, 'Body Mismatch', [{'System': sysname, 'Body': name}])
+
+            return (None, 'Unknown named body', [{'System': sysname, 'Body': name}])
                 
             cursor = self.conn.cursor()
             cursor.execute(
                 'INSERT INTO SystemBodies ' +
-                '(SystemId,  HasBodyId, BodyId,      BodyCategory, Stars, IsBelt, Planet, Moon1IsRing, Moon1, Moon2IsRing, Moon2, Moon3IsRing, Moon3, IsNamedBody) VALUES '
-                '(%s,        %s,        %s,          0,            0,     0,      0,      0,           0,     0,           0,     0,           0,     1)',
+                '(SystemId,  HasBodyId, BodyId,      BodyDesignationId, IsNamedBody) VALUES '
+                '(%s,        %s,        %s,          0,                 1)',
                  (system.id, 1 if bodyid is not None else 0, bodyid or 0)
             )
             rowid = cursor.lastrowid
@@ -1052,17 +1317,58 @@ class EDDNSysDB(object):
                 
             cursor.execute(
                 'INSERT INTO SystemBodies_Named ' +
-                '(Id,    Name) VALUES ' +
-                '(%s,    %s)', 
-                 (rowid, name)
+                '(Id,    SystemId, Name) VALUES ' +
+                '(%s,    %s,       %s)', 
+                 (rowid, system.id, name)
             )
+
+            '''
             cursor.execute(
                 'INSERT INTO SystemBodies_Validity ' +
                 '(Id,    IsRejected) VALUES ' +
                 '(%s,    1)',
                  (rowid, )
             )
-            return EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 1)
+            '''
+
+            return (EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 1), None, None)
+
+    def getfaction(self, timer, name, government, allegiance):
+        factions = None
+
+        if government[:12] == '$government_' and government[-1] == ';':
+            government = government[12:-1]
+
+        if name in self.factions:
+            factions = self.factions[name]
+            if type(factions) is not list:
+                factions = [factions]
+            for faction in factions:
+                if faction.government == government and (allegiance is None or faction.allegiance == allegiance):
+                    return faction
+
+        if allegiance is None:
+            return None
+
+        c = self.conn.cursor()
+        c.execute(
+            'INSERT INTO Factions ' +
+            '(Name, Government, Allegiance) VALUES ' +
+            '(%s,   %s,         %s)',
+            (name, government, allegiance))
+        factionid = c.lastrowid
+
+        faction = EDDNFaction(factionid, name, government, allegiance)
+
+        if factions is None:
+            self.factions[name] = faction
+        elif type(self.factions[name]) is not list:
+            self.factions[name] = [self.factions[name]]
+            self.factions[name] += [faction]
+        else:
+            self.factions[name] += [faction]
+
+        return faction
 
     def updatestation(self, station, **kwargs):
         station = station._replace(**kwargs)
@@ -1071,6 +1377,16 @@ class EDDNSysDB(object):
         c.execute('UPDATE Stations SET MarketId = %s, SystemId = %s, StationType = %s, Body = %s, BodyID = %s WHERE Id = %s', (station.marketid, station.systemid, station.type, station.body, station.bodyid, station.id))
 
         return station
+
+    def getsystembyid(self, sysid):
+        c = self.conn.cursor()
+        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE Id = %s', (sysid,))
+        row = c.fetchone()
+
+        if row:
+            return EDDNSystem(row[0], row[1], self._namestr(row[2]), row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105)
+        else:
+            return None
 
     def findedsmsysid(self, edsmid):
         if self.edsmsysids is not None and len(self.edsmsysids) > edsmid:
@@ -1088,16 +1404,6 @@ class EDDNSysDB(object):
         else:
             return (None, None)
 
-    def getsystembyid(self, sysid):
-        c = self.conn.cursor()
-        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE Id = %s', (sysid,))
-        row = c.fetchone()
-
-        if row:
-            return EDDNSystem(row[0], row[1], self._namestr(row[2]), row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105)
-        else:
-            return None
-
     def updateedsmsysid(self, edsmid, sysid, ts):
         ts = int((ts - tsbasedate).total_seconds())
         c = self.conn.cursor()
@@ -1105,6 +1411,17 @@ class EDDNSysDB(object):
                   'ON DUPLICATE KEY UPDATE Id = %s, TimestampSeconds = %s',
                   (edsmid, sysid, ts, sysid, ts))
     
+    def addedsmunresolved(self, edsmid, sysaddr, sysname, x, y, z, msgjson, ts):
+        self.conn.cursor().execute(
+            'INSERT INTO Systems_EDSM_Unresolved ' +
+            '(EdsmId, JsonText, SystemAddress, SystemName, X, Y, Z, Timestamp) VALUES ' +
+            '(%s,     %s,       %s,            %s,        %s,%s,%s, %s) ' +
+            'ON DUPLICATE KEY UPDATE ' +
+            'JsonText = %s, SystemAddress = %s, SystemName = %s, X = %s, Y = %s, Z = %s, Timestamp = %s',
+             (edsmid, msgjson,  sysaddr,       sysname,    x, y, z, ts,
+                      msgjson,  sysaddr,       sysname,    x, y, z, ts)
+        )
+
     def updateedsmbodyid(self, edsmid, bodyid, ts):
         ts = int((ts - tsbasedate).total_seconds())
         c = self.conn.cursor()
@@ -1112,6 +1429,46 @@ class EDDNSysDB(object):
                   'ON DUPLICATE KEY UPDATE Id = %s, TimestampSeconds = %s',
                   (edsmid, sysid, ts, bodyid, ts))
     
+    def updateedsmstationid(self, edsmid, stationid, ts):
+        c = self.conn.cursor()
+        c.execute('INSERT INTO Stations_EDSM SET EdsmStationId = %s, Id = %s, Timestamp = %s ' +
+                  'ON DUPLICATE KEY UPDATE Id = %s, Timestamp = %s',
+                  (edsmid, stationid, ts, stationid, ts))
+    
+    def findeddbsysid(self, eddbid):
+        if self.eddbsysids is not None and len(self.eddbsysids) > eddbid:
+            row = self.eddbsysids[eddbid]
+
+            if row[0] != 0:
+                return (row[0], row[2])
+
+        c = self.conn.cursor()
+        c.execute('SELECT Id, TimestampSeconds FROM Systems_EDDB WHERE EddbId = %s', (eddbid,))
+        row = c.fetchone()
+
+        if row:
+            return (row[0], row[1])
+        else:
+            return (None, None)
+
+    def updateeddbsysid(self, eddbid, sysid, ts):
+        c = self.conn.cursor()
+        c.execute('INSERT INTO Systems_EDDB SET EddbId = %s, Id = %s, TimestampSeconds = %s ' +
+                  'ON DUPLICATE KEY UPDATE Id = %s, TimestampSeconds = %s',
+                  (eddbid, sysid, ts, sysid, ts))
+    
+    def addeddbunresolved(self, eddbid, sysname, x, y, z, msgjson, ts):
+        msgjson = json.dumps(msg)
+        self.conn.cursor().execute(
+            'INSERT INTO Systems_EDDB_Unresolved ' +
+            '(EddbId, JsonText, SystemName, X, Y, Z, TimestampSeconds) VALUES ' +
+            '(%s,     %s,       %s,        %s,%s,%s, %s) ' +
+            'ON DUPLICATE KEY UPDATE ' +
+            'JsonText = %s, SystemName = %s, X = %s, Y = %s, Z = %s, TimestampSeconds = %s',
+             (eddbid, msgjson,  sysname,    x, y, z, ts,
+                      msgjson,  sysname,    x, y, z, ts)
+        )
+
     def addfilelinesystems(self, linelist):
         values = [(fileid, lineno, system.id) for fileid, lineno, system in linelist]
         self.conn.cursor().executemany('INSERT INTO FileLineSystems (FileId, LineNo, SystemId) VALUES (%s, %s, %s)', values)
@@ -1126,6 +1483,26 @@ class EDDNSysDB(object):
 
     def addfilelinetimestamps(self, linelist):
         self.conn.cursor().executemany('INSERT INTO FileLineTimestamps (FileId, LineNo, TimestampSeconds, GatewayTimestampTicks) VALUES (%s, %s, %s, %s)', linelist)
+
+    def addfilelinesoftware(self, linelist):
+        self.conn.cursor().executemany('INSERT INTO FileLineSoftware (FileId, LineNo, SoftwareId) VALUES (%s, %s, %s)', linelist)
+
+    def addfilelineinfo(self, linelist):
+        self.conn.cursor().executemany(
+            'INSERT INTO eddata_temp.FileLineInfo ' +
+            '(FileId, LineNo, Timestamp, GatewayTimestamp, SoftwareId, SystemId, BodyId, LineLength, DistFromArrivalLS, HasBodyId, HasSystemAddress, HasMarketId) VALUES ' +
+            '(%s,     %s,     %s,        %s,               %s,         %s,       %s,     %s,         %s,                %s,        %s,               %s)',
+            linelist
+        )
+
+    def addfilelinefactions(self, linelist):
+        values = [(fileid, lineno, faction.id, entrynum) for fileid, lineno, faction, entrynum in linelist]
+        self.conn.cursor().executemany(
+            'INSERT INTO FileLineFactions ' +
+            '(FileId, LineNo, FactionId, EntryNum) VALUES ' +
+            '(%s,     %s,     %s,        %s)',
+            values
+        )
 
     def addfilelinesystemunresolved(self, fileid, lineno, line, sysname, sysaddr, x, y, z, timestamp):
         self.conn.cursor().execute(
@@ -1175,7 +1552,75 @@ class EDDNSysDB(object):
 
         return { row[0]: row[1] for row in cursor }
 
+    def getsoftwarefilelines(self, fileid):
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, SoftwareId FROM FileLineSoftware WHERE FileId = %s', (fileid,))
+
+        return { row[0]: row[1] for row in cursor }
+
+    def getinfofilelines(self, fileid):
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, Timestamp, SystemId, BodyId FROM eddata_temp.FileLineInfo WHERE FileId = %s', (fileid,))
+
+        return { row[0]: (row[1], row[2], row[3]) for row in cursor }
+
+    def getinfosystemfilelines(self, fileid):
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, SystemId FROM eddata_temp.FileLineInfo WHERE FileId = %s', (fileid,))
+
+        return { row[0]: row[1] for row in cursor if row[1] is not None }
+
+    def getinfobodyfilelines(self, fileid):
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, BodyId FROM eddata_temp.FileLineInfo WHERE FileId = %s', (fileid,))
+
+        return { row[0]: row[1] for row in cursor if row[1] is not None }
+
+    def getfactionfilelines(self, fileid):
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, FactionId FROM FileLineFactions WHERE FileId = %s', (fileid,))
+
+        lines = {}
+        for row in cursor:
+            if row[0] not in lines:
+                lines[row[0]] = []
+            lines[row[0]] += [row[1]]
+
+        return lines
+
     def getfiles(self):
+        
+        sys.stderr.write('    Getting system line counts\n')
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineSystems GROUP BY FileId')
+        syslinecounts = { row[0]: row[1] for row in cursor }
+
+        sys.stderr.write('    Getting station line counts\n')
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineStations GROUP BY FileId')
+        stnlinecounts = { row[0]: row[1] for row in cursor }
+
+        sys.stderr.write('    Getting body line counts\n')
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineBodies GROUP BY FileId')
+        bodylinecounts = { row[0]: row[1] for row in cursor }
+
+        sys.stderr.write('    Getting software line counts\n')
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineSoftware GROUP BY FileId')
+        softwarelinecounts = { row[0]: row[1] for row in cursor }
+
+        sys.stderr.write('    Getting info line counts\n')
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(LineNo) FROM eddata_temp.FileLineInfo GROUP BY FileId')
+        infolinecounts = { row[0]: row[1] for row in cursor }
+
+        sys.stderr.write('    Getting faction line counts\n')
+        cursor = makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(DISTINCT LineNo) FROM FileLineFactions GROUP BY FileId')
+        factionlinecounts = { row[0]: row[1] for row in cursor }
+
+        sys.stderr.write('    Getting file info\n')
         cursor = makestreamingcursor(self.conn)
         cursor.execute('''
             SELECT 
@@ -1184,17 +1629,35 @@ class EDDNSysDB(object):
                 Date, 
                 EventType, 
                 LineCount, 
-                (SELECT COUNT(*) FROM FileLineSystems WHERE FileId = f.Id) AS SystemLineCount, 
-                (SELECT COUNT(*) FROM FileLineStations WHERE FileId = f.Id) AS StationLineCount, 
-                (SELECT COUNT(*) FROM FileLineBodies WHERE FileId = f.Id) AS BodyLineCount
+                PopulatedLineCount,
+                IsTest
             FROM Files f
         ''')
 
-        return { info.name: info for row in cursor for info in [EDDNFile(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])] }
+        return { 
+            row[1]: EDDNFile(
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                syslinecounts[row[0]] if row[0] in syslinecounts else 0,
+                stnlinecounts[row[0]] if row[0] in stnlinecounts else 0,
+                bodylinecounts[row[0]] if row[0] in bodylinecounts else 0,
+                softwarelinecounts[row[0]] if row[0] in softwarelinecounts else 0,
+                infolinecounts[row[0]] if row[0] in infolinecounts else 0,
+                factionlinecounts[row[0]] if row[0] in factionlinecounts else 0,
+                row[5],
+                row[6]
+            ) for row in cursor 
+        }
 
-    def updatelinecount(self, fileid, linecount):
+    def updatefileinfo(self, fileid, linecount, totalsize, comprsize, poplinecount):
         cursor = makestreamingcursor(self.conn)
-        cursor.execute('UPDATE Files SET LineCount = %s WHERE Id = %s', (linecount, fileid))
+        cursor.execute(
+            'UPDATE Files SET LineCount = %s, CompressedSize = %s, UncompressedSize = %s, PopulatedLineCount = %s WHERE Id = %s',
+            (linecount, comprsize, totalsize, poplinecount, fileid)
+        )
 
 class Timer(object):
     def __init__(self, names):
@@ -1225,359 +1688,829 @@ def timestamptosql(timestamp):
         else:
             return datetime.strptime(timestamp[:19], '%Y-%m-%dT%H:%M:%S')
 
+def processedsmbodies(sysdb, timer, rejectout):
+    sys.stderr.write('Processing EDSM bodies\n')
+    with bz2.BZ2File(edsmbodiesfile, 'r') as f:
+        w = 0
+        for i, line in enumerate(f):
+            try:
+                msg = json.loads(line)
+                edsmbodyid = msg['id']
+                bodyid = msg['bodyId']
+                bodyname = msg['name']
+                edsmsysid = msg['systemId']
+                sysname = msg['systemName']
+                timestamp = msg['updateTime'].replace(' ', 'T')
+                periapsis = msg['argofPeriapsis'] if 'argOfPeriapsis' in msg else None
+                semimajor = msg['semiMajorAxis'] if 'semiMajorAxis' in msg else None
+                bodytype = msg['type']
+                subtype = msg['subType']
+            except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                rejectout.write(line)
+                timer.time('error')
+                pass
+            else:
+                sqltimestamp = timestamptosql(timestamp)
+                timer.time('parse')
+                reject = True
+                rejectReason = None
+                sysid = sysdb.findedsmsysid(edsmsysid)
+
+                if sysid:
+                    system = sysdb.getsystembyid(sysid)
+                    timer.time('sysquery')
+
+                    if system is not None:
+                        body = {}
+                        
+                        if bodytype == 'Planet':
+                            body['PlanetClass'] = subtype
+                        elif bodytype == 'Star':
+                            body['StarType'] = subtype
+                        
+                        if periapsis is not None:
+                            body['Periapsis'] = periapsis
+                        
+                        if semimajor:
+                            body['SemiMajorAxis'] = semimajor * 149597870700
+                        
+                        (scanbody, rejectReason) = sysdb.getbody(timer, bodyname, sysname, bodyid, system, body, sqltimestamp)
+
+                        if scanbody:
+                            sysdb.updateedsmbodyid(scanbody.id, edsmbodyid, sqltimestamp)
+                            reject = False
+                        
+                        timer.time('bodyquery')
+                    else:
+                        rejectReason = 'System not found'
+                else:
+                    rejectReason = 'System not found'
+
+                if reject:
+                    msg['rejectReason'] = rejectReason
+                    rejectout.write(json.dumps(msg) + '\n')
+
+            if ((i + 1) % 1000) == 0:
+                sysdb.commit()
+                sys.stderr.write('.')
+                sys.stderr.flush()
+
+                if ((i + 1) % 64000) == 0:
+                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.flush()
+
+    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.flush()
+    sysdb.commit()
+    timer.time('commit')
+
+def processedsmstations(sysdb, timer, rejectout):
+    sys.stderr.write('Processing EDSM stations\n')
+    with gzip.open(edsmstationsfile, 'r') as f:
+        stations = json.load(f)
+        w = 0
+        for i, msg in enumerate(stations):
+            timer.time('read')
+            try:
+                edsmstationid = msg['id']
+                marketid = msg['marketId']
+                stationname = msg['name']
+                stntype = msg['type']
+                stntype = EDSMStationTypes[stntype] if stntype in EDSMStationTypes else stntype
+                edsmsysid = msg['systemId']
+                sysname = msg['systemName']
+                timestamp = msg['updateTime']['information'].replace(' ', 'T')
+            except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                msg['rejectReason'] = 'Incomplete'
+                rejectout.write(json.dumps(msg) + '\n')
+                timer.time('error')
+                pass
+            else:
+                sqltimestamp = timestamptosql(timestamp)
+                sqlts = int((sqltimestamp - tsbasedate).total_seconds())
+                timer.time('parse')
+                (sysid, ts) = sysdb.findedsmsysid(edsmsysid)
+                timer.time('sysquery')
+                reject = True
+                rejectReason = None
+                rejectData = None
+
+                if sysid:
+                    system = sysdb.getsystembyid(sysid)
+                    timer.time('sysquery')
+
+                    if system is not None:
+                        if stationname is not None and stationname != '':
+                            (station, rejectReason, rejectData) = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp, system, stntype)
+                            timer.time('stnquery')
+                            if station is not None:
+                                sysdb.updateedsmstationid(edsmstationid, station.id, sqltimestamp)
+                                reject = False
+                        else:
+                            rejectReason = 'No station name'
+                    else:
+                        rejectReason = 'System not found'
+
+                if reject:
+                    msg['rejectReason'] = rejectReason
+                    msg['rejectData'] = rejectData
+                    rejectout.write(json.dumps(msg) + '\n')
+
+
+            if ((i + 1) % 1000) == 0:
+                sysdb.commit()
+                sys.stderr.write('.' if w == 0 else '*')
+                sys.stderr.flush()
+                w = 0
+
+                if ((i + 1) % 64000) == 0:
+                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.flush()
+                timer.time('commit')
+                    
+    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.flush()
+    sysdb.commit()
+    timer.time('commit')
+
+def processedsmsystems(sysdb, timer, rejectout):
+    sys.stderr.write('Processing EDSM systems\n')
+    with bz2.BZ2File(edsmsysfile, 'r') as f:
+        w = 0
+        for i, line in enumerate(f):
+            timer.time('read')
+            try:
+                msg = json.loads(line)
+                edsmsysid = msg['id']
+                sysaddr = msg['id64']
+                sysname = msg['name']
+                coords = msg['coords']
+                starpos = [coords['x'],coords['y'],coords['z']]
+                timestamp = msg['date'].replace(' ', 'T')
+            except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                rejectout.write(line)
+                timer.time('error')
+                pass
+            else:
+                sqltimestamp = timestamptosql(timestamp)
+                sqlts = int((sqltimestamp - tsbasedate).total_seconds())
+                timer.time('parse')
+                (sysid, ts) = sysdb.findedsmsysid(edsmsysid)
+                timer.time('sysquery')
+                if not sysid or ts != sqlts:
+                    starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                    (system, rejectReason, rejectData) = sysdb.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                    timer.time('sysquery', 0)
+
+                    if system is not None:
+                        sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp)
+                    else:
+                        sysdb.addedsmunresolved(edsmsysid, sysaddr, sysname, starpos[0], starpos[1], starpos[0], line, timestamp)
+                        rejectout.write(line)
+
+                    timer.time('edsmupdate')
+                    w += 1
+
+            if ((i + 1) % 1000) == 0:
+                sysdb.commit()
+                sys.stderr.write('.' if w == 0 else '*')
+                sys.stderr.flush()
+                w = 0
+
+                if ((i + 1) % 64000) == 0:
+                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.flush()
+                timer.time('commit')
+                    
+    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.flush()
+    sysdb.commit()
+    timer.time('commit')
+
+def processeddbsystems(sysdb, timer, rejectout):
+    sys.stderr.write('Processing EDDB systems\n')
+    with bz2.open(eddbsysfile, 'rt', encoding='utf8') as f:
+        csvreader = csv.DictReader(f)
+        w = 0
+        for i, msg in enumerate(csvreader):
+            timer.time('read')
+            try:
+                eddbsysid = int(msg['id'])
+                sysname = msg['name']
+                starpos = [float(msg['x']),float(msg['y']),float(msg['z'])]
+                timestamp = int(msg['updated_at'])
+            except (OverflowError,ValueError,TypeError):
+                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                rejectout.write(json.dumps(msg) + '\n')
+                timer.time('error')
+                pass
+            else:
+                timer.time('parse')
+                (sysid, ts) = sysdb.findeddbsysid(eddbsysid)
+                timer.time('sysquery')
+                if not sysid or ts != timestamp:
+                    starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                    (system, rejectReason, rejectData) = sysdb.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], None)
+                    timer.time('sysquery', 0)
+
+                    if system is not None:
+                        sysdb.updateeddbsysid(eddbsysid, system.id, timestamp)
+                    else:
+                        sysdb.addeddbunresolved(eddbsysid, sysname, starpos[0], starpos[1], starpos[0], msg, timestamp)
+                        rejectout.write(json.dumps(msg) + '\n')
+                    timer.time('eddbupdate')
+                    w += 1
+
+            if ((i + 1) % 1000) == 0:
+                sysdb.commit()
+                sys.stderr.write('.' if w == 0 else '*')
+                sys.stderr.flush()
+                w = 0
+
+                if ((i + 1) % 64000) == 0:
+                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.flush()
+                timer.time('commit')
+                    
+    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.flush()
+    sysdb.commit()
+    timer.time('commit')
+
+def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reprocessall, rejectout):
+    #if fileinfo.eventtype in ('Location'):
+    #    continue
+    if (fileinfo.linecount is None 
+        or fileinfo.populatedlinecount is None
+        or (reprocessall == True and fileinfo.eventtype == 'Scan' and fileinfo.date >= ed300date.date()) 
+        or (reprocess == True 
+            and (fileinfo.linecount != fileinfo.syslinecount 
+                 or fileinfo.linecount != fileinfo.infolinecount
+                 or (fileinfo.eventtype == 'Scan' and fileinfo.linecount != fileinfo.bodylinecount)
+                 or (fileinfo.eventtype == 'Docked' and fileinfo.linecount != fileinfo.stnlinecount)
+                 or fileinfo.populatedlinecount != fileinfo.factionlinecount
+                 or fileinfo.linecount != fileinfo.softwarelinecount))):
+        fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
+        if os.path.exists(fn):
+            sys.stderr.write('{0}\n'.format(fn))
+            statinfo = os.stat(fn)
+            comprsize = statinfo.st_size
+            with bz2.BZ2File(fn, 'r') as f:
+                syslines = sysdb.getsystemfilelines(fileinfo.id)
+                stnlines = sysdb.getstationfilelines(fileinfo.id)
+                bodylines = sysdb.getbodyfilelines(fileinfo.id)
+                tslines = sysdb.gettimestampfilelines(fileinfo.id)
+                softwarelines = sysdb.getsoftwarefilelines(fileinfo.id)
+                infolines = sysdb.getinfofilelines(fileinfo.id)
+                factionlines = sysdb.getfactionfilelines(fileinfo.id)
+                linecount = 0
+                poplinecount = 0
+                totalsize = 0
+                timer.time('load')
+                systoinsert = []
+                stntoinsert = []
+                bodytoinsert = []
+                timestamptoinsert = []
+                softwaretoinsert = []
+                infotoinsert = []
+                factionstoinsert = []
+                for lineno, line in enumerate(f):
+                    if (lineno + 1) not in tslines or (lineno + 1) not in softwarelines or (lineno + 1) not in infolines or (lineno + 1) not in syslines or (lineno + 1) not in bodylines or (reprocessall == True and fileinfo.eventtype == 'Scan'):
+                        timer.time('read')
+                        msg = None
+                        try:
+                            msg = json.loads(line)
+                            body = msg['message']
+                            hdr = msg['header']
+                            sysname = body['StarSystem']
+                            starpos = body['StarPos']
+                            sysaddr = body['SystemAddress'] if 'SystemAddress' in body else None
+                            stationname = body['StationName'] if 'StationName' in body else None
+                            marketid = body['MarketID'] if 'MarketID' in body else None
+                            stationtype = body['StationType'] if 'StationType' in body else None
+                            bodyname = body['Body'] if 'Body' in body else None
+                            bodyid = body['BodyID'] if 'BodyID' in body else None
+                            bodytype = body['BodyType'] if 'BodyType' in body else None
+                            scanbodyname = body['BodyName'] if 'BodyName' in body else None
+                            parents = body['Parents'] if 'Parents' in body else None
+                            factions = body['Factions'] if 'Factions' in body else None
+                            sysfaction = body['SystemFaction'] if 'SystemFaction' in body else (body['Faction'] if 'Faction' in body else None)
+                            sysgovern = body['SystemGovernment'] if 'SystemGovernment' in body else (body['Government'] if 'Government' in body else None)
+                            sysalleg = body['SystemAllegiance'] if 'SystemAllegiance' in body else (body['Allegiance'] if 'Allegiance' in body else '')
+                            stnfaction = body['StationFaction'] if 'StationFaction' in body else None
+                            stngovern = body['StationGovernment'] if 'StationGovernment' in body else None
+                            timestamp = body['timestamp'] if 'timestamp' in body else None
+                            eventtype = body['event'] if 'event' in body else None
+                            gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
+                            software = hdr['softwareName'] if 'softwareName' in hdr else None
+                            distfromstar = body['DistanceFromArrivalLS'] if 'DistanceFromArrivalLS' in body else None
+                        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                            sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
+                            if msg:
+                                msg['rejectReason'] = 'Incomplete'
+                                rejectout.write(json.dumps(msg) + '\n')
+                            else:
+                                msg = {
+                                    'rejectReason': 'Invalid',
+                                    'exception': '{0}'.format(sys.exc_info()[1]),
+                                    'rawmessage': line.decode('utf-8')
+                                }
+                                rejectout.write(json.dumps(msg) + '\n')
+                            timer.time('error')
+                            pass
+                        else:
+                            if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
+                                marketid = None
+                            sqltimestamp = timestamptosql(timestamp)
+                            sqlgwtimestamp = timestamptosql(gwtimestamp)
+                            timer.time('parse')
+                            reject = False
+                            rejectReason = None
+                            rejectData = None
+                            systemid = None
+                            sysbodyid = None
+                            linelen = len(line)
+
+                            if factions is not None or sysfaction is not None or stnfaction is not None:
+                                poplinecount += 1
+
+                            if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
+                                
+                                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                                (system, rejectReason, rejectData) = sysdb.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                                timer.time('sysquery')
+                                if system is not None:
+                                    systemid = system.id
+                                    if (lineno + 1) not in stnlines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
+                                        if stationname is not None and stationname != '':
+                                            (station, rejectReason, rejectData) = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp, system, stationtype, bodyname, bodyid, bodytype, eventtype, fileinfo.test)
+                                            timer.time('stnquery')
+
+                                            if station is not None:
+                                                stntoinsert += [(fileinfo.id, lineno + 1, station)]
+                                            else:
+                                                reject = True
+                                                #import pdb; pdb.set_trace()
+                                                #sysdb.addfilelinestationunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, system.id, stationname, marketid, sqltimestamp)
+                                                pass
+                                        elif bodyname is not None and bodytype is not None and bodytype == 'Station':
+                                            (station, rejectReason, rejectData) = sysdb.getstation(timer, bodyname, sysname, None, sqltimestamp, system = system, bodyid = bodyid, eventtype = eventtype, test = fileinfo.test)
+                                            timer.time('stnquery')
+
+                                            if station is not None:
+                                                stntoinsert += [(fileinfo.id, lineno + 1, station)]
+                                            else:
+                                                reject = True
+                                                #import pdb; pdb.set_trace()
+                                                #sysdb.addfilelinestationunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, system.id, bodyname, marketid, sqltimestamp)
+                                                pass
+
+                                    if (lineno + 1) not in bodylines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
+                                        if scanbodyname is not None:
+                                            (scanbody, rejectReason, rejectData) = sysdb.getbody(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
+                                            if scanbody is not None:
+                                                sysdb.insertbodyparents(timer, scanbody.id, system, bodyid, parents)
+                                                bodytoinsert += [(fileinfo.id, lineno + 1, scanbody)]
+                                                sysbodyid = scanbody.id
+                                            else:
+                                                reject = True
+                                                sysdb.addfilelinebodyunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, system.id, scanbodyname, bodyid, sqltimestamp)
+                                            timer.time('bodyquery')
+                                        elif bodyname is not None and bodytype is not None and bodytype != 'Station':
+                                            (scanbody, rejectReason, rejectData) = sysdb.getbody(timer, bodyname, sysname, bodyid, system, {}, sqltimestamp)
+                                            if scanbody is not None:
+                                                bodytoinsert += [(fileinfo.id, lineno + 1, scanbody)]
+                                                sysbodyid = scanbody.id
+                                            else:
+                                                reject = True
+                                            timer.time('bodyquery')
+                                    elif (reprocessall == True or (lineno + 1) not in infolines) and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
+                                        if scanbodyname is not None:
+                                            (scanbody, rejectReason, rejectData) = sysdb.getbody(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
+                                            if scanbody is not None:
+                                                sysbodyid = scanbody.id
+                                                if (lineno + 1) not in bodylines:
+                                                    bodytoinsert += [(fileinfo.id, lineno + 1, scanbody)]
+                                                sysdb.insertbodyparents(timer, scanbody.id, system, bodyid, parents)
+                                            else:
+                                                reject = True
+                                            timer.time('bodyquery')
+                                        elif bodyname is not None and bodytype is not None and bodytype != 'Station':
+                                            (scanbody, rejectReason, rejectData) = sysdb.getbody(timer, bodyname, sysname, bodyid, system, {}, sqltimestamp)
+                                            if scanbody is not None:
+                                                sysbodyid = scanbody.id
+                                                if (lineno + 1) not in bodylines:
+                                                    bodytoinsert += [(fileinfo.id, lineno + 1, scanbody)]
+                                            else:
+                                                reject = True
+                                            timer.time('bodyquery')
+
+                                    if (lineno + 1) not in factionlines and not reject:
+                                        linefactions = []
+                                        linefactiondata = []
+                                        if factions is not None:
+                                            for n, faction in enumerate(factions):
+                                                linefactiondata += [{
+                                                    'Name': faction['Name'],
+                                                    'Government': faction['Government'],
+                                                    'Allegiance': faction['Allegiance'] if 'Allegiance' in faction else None,
+                                                    'EntryNum': n
+                                                }]
+                                                linefactions += [(n, sysdb.getfaction(timer, faction['Name'], faction['Government'], faction['Allegiance'] if 'Allegiance' in faction else None))]
+                                        if sysfaction is not None:
+                                            if type(sysfaction) is dict and 'Name' in sysfaction:
+                                                sysfaction = sysfaction['Name']
+                                            linefactiondata += [{
+                                                'Name': sysfaction,
+                                                'Government': sysgovern,
+                                                'Allegiance': sysalleg,
+                                                'EntryNum': -1
+                                            }]
+                                            linefactions += [(-1, sysdb.getfaction(timer, sysfaction, sysgovern, sysalleg))]
+                                        if stnfaction is not None:
+                                            if type(stnfaction) is dict and 'Name' in stnfaction:
+                                                stnfaction = stnfaction['Name']
+                                            linefactiondata += [{
+                                                'Name': stnfaction,
+                                                'Government': stngovern,
+                                                'EntryNum': -2
+                                            }]
+                                            linefactions += [(-2, sysdb.getfaction(timer, stnfaction, stngovern, None))]
+
+                                        if len(linefactions) != 0:
+                                            if len([fid for fid in linefactions if fid is None]) != 0:
+                                                reject = True
+                                                rejectReason = 'Faction not found'
+                                                rejectData = linefactiondata
+                                            else:
+                                                for n, faction in linefactions:
+                                                    factionstoinsert += [(fileinfo.id, lineno + 1, faction, n)]
+
+                                        timer.time('factionupdate')
+
+                                    if reject:
+                                        msg['rejectReason'] = rejectReason
+                                        msg['rejectData'] = rejectData
+                                        rejectout.write(json.dumps(msg) + '\n')
+                                    else:
+                                        if (lineno + 1) not in syslines:
+                                            systoinsert += [(fileinfo.id, lineno + 1, system)]
+
+                                        if (lineno + 1) not in infolines:
+                                            sysdb.insertsoftware(software)
+                                            infotoinsert += [(
+                                                fileinfo.id,
+                                                lineno + 1,
+                                                sqltimestamp,
+                                                sqlgwtimestamp,
+                                                sysdb.software[software],
+                                                systemid,
+                                                sysbodyid,
+                                                linelen,
+                                                distfromstar,
+                                                1 if 'BodyID' in body else 0,
+                                                1 if 'SystemAddress' in body else 0,
+                                                1 if 'MarketID' in body else 0
+                                            )]
+
+                                        if (lineno + 1) not in tslines:
+                                            timestamptoinsert += [(fileinfo.id, lineno + 1, (sqltimestamp - tsbasedate).total_seconds(), (sqlgwtimestamp - tsbasedate).total_seconds() * 10000000.0)]
+
+                                        if (lineno + 1) not in softwarelines:
+                                            sysdb.insertsoftware(software)
+                                            softwaretoinsert += [(fileinfo.id, lineno + 1, sysdb.software[software])]
+
+                                else:
+                                    sysdb.addfilelinesystemunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, sysaddr, starpos[0], starpos[1], starpos[2], sqltimestamp)
+                                    msg['rejectReason'] = rejectReason
+                                    msg['rejectData'] = rejectData
+                                    rejectout.write(json.dumps(msg) + '\n')
+                            else:
+                                msg['rejectReason'] = 'Timestamp error'
+                                rejectout.write(json.dumps(msg) + '\n')
+
+                                
+                    linecount += 1
+                    totalsize += len(line)
+                    if (linecount % 1000) == 0:
+                        sysdb.commit()
+                        if len(systoinsert) != 0:
+                            sysdb.addfilelinesystems(systoinsert)
+                            timer.time('sysinsert', len(systoinsert))
+                            systoinsert = []
+                        if len(stntoinsert) != 0:
+                            sysdb.addfilelinestations(stntoinsert)
+                            timer.time('stninsert', len(stntoinsert))
+                            stntoinsert = []
+                        if len(bodytoinsert) != 0:
+                            sysdb.addfilelinebodies(bodytoinsert)
+                            timer.time('bodyinsert', len(bodytoinsert))
+                            bodytoinsert = []
+                        if len(timestamptoinsert) != 0:
+                            sysdb.addfilelinetimestamps(timestamptoinsert)
+                            timer.time('timestampinsert', len(timestamptoinsert))
+                            timestamptoinsert = []
+                        if len(softwaretoinsert) != 0:
+                            sysdb.addfilelinesoftware(softwaretoinsert)
+                            timer.time('softwareinsert', len(softwaretoinsert))
+                            softwaretoinsert = []
+                        if len(infotoinsert) != 0:
+                            sysdb.addfilelineinfo(infotoinsert)
+                            timer.time('infoinsert', len(infotoinsert))
+                            infotoinsert = []
+                        if len(factionstoinsert) != 0:
+                            sysdb.addfilelinefactions(factionstoinsert)
+                            timer.time('factioninsert', len(factionstoinsert))
+                            factionstoinsert = []
+                        sysdb.commit()
+                        sys.stderr.write('.')
+                        sys.stderr.flush()
+                
+                sysdb.commit()
+                if len(systoinsert) != 0:
+                    sysdb.addfilelinesystems(systoinsert)
+                    timer.time('sysinsert', len(systoinsert))
+                    systoinsert = []
+                if len(stntoinsert) != 0:
+                    sysdb.addfilelinestations(stntoinsert)
+                    timer.time('stninsert', len(stntoinsert))
+                    stntoinsert = []
+                if len(bodytoinsert) != 0:
+                    sysdb.addfilelinebodies(bodytoinsert)
+                    timer.time('bodyinsert', len(bodytoinsert))
+                    bodytoinsert = []
+                if len(timestamptoinsert) != 0:
+                    sysdb.addfilelinetimestamps(timestamptoinsert)
+                    timer.time('timestampinsert', len(timestamptoinsert))
+                    timestamptoinsert = []
+                if len(softwaretoinsert) != 0:
+                    sysdb.addfilelinesoftware(softwaretoinsert)
+                    timer.time('softwareinsert', len(softwaretoinsert))
+                    softwaretoinsert = []
+                if len(infotoinsert) != 0:
+                    sysdb.addfilelineinfo(infotoinsert)
+                    timer.time('infoinsert', len(infotoinsert))
+                    infotoinsert = []
+                if len(factionstoinsert) != 0:
+                    sysdb.addfilelinefactions(factionstoinsert)
+                    timer.time('factioninsert', len(factionstoinsert))
+                    factionstoinsert = []
+
+                sysdb.commit()
+
+                sys.stderr.write('\n')
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, poplinecount)
+
+def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout):
+    if (fileinfo.linecount is None 
+        or (reprocess == True 
+            and (fileinfo.linecount != fileinfo.stnlinecount
+                 or fileinfo.linecount != fileinfo.softwarelinecount
+                 or fileinfo.linecount != fileinfo.infolinecount))):
+        fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
+        if os.path.exists(fn):
+            sys.stderr.write('{0}\n'.format(fn))
+            statinfo = os.stat(fn)
+            comprsize = statinfo.st_size
+            with bz2.BZ2File(fn, 'r') as f:
+                stnlines = sysdb.getstationfilelines(fileinfo.id)
+                syslines = sysdb.getsystemfilelines(fileinfo.id)
+                tslines = sysdb.gettimestampfilelines(fileinfo.id)
+                softwarelines = sysdb.getsoftwarefilelines(fileinfo.id)
+                infolines = sysdb.getinfofilelines(fileinfo.id)
+                linecount = 0
+                totalsize = 0
+                stntoinsert = []
+                systoinsert = []
+                timestamptoinsert = []
+                softwaretoinsert = []
+                infotoinsert = []
+                timer.time('load')
+                for lineno, line in enumerate(f):
+                    if (reprocess == True 
+                        and ((lineno + 1) not in stnlines 
+                             or (lineno + 1) not in syslines) 
+                             or (lineno + 1) not in tslines 
+                             or (lineno + 1) not in softwarelines
+                             or (lineno + 1) not in infolines):
+                        timer.time('read')
+                        msg = None
+                        try:
+                            msg = json.loads(line)
+                            body = msg['message']
+                            hdr = msg['header']
+                            sysname = body['systemName']
+                            stationname = body['stationName']
+                            marketid = body['marketId'] if 'marketId' in body else None
+                            timestamp = body['timestamp'] if 'timestamp' in body else None
+                            gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
+                            software = hdr['softwareName'] if 'softwareName' in hdr else None
+                        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                            print('Error: {0}'.format(sys.exc_info()[1]))
+                            if msg:
+                                msg['rejectReason'] = 'Incomplete'
+                                rejectout.write(json.dumps(msg) + '\n')
+                            else:
+                                msg = {
+                                    'rejectReason': 'Invalid',
+                                    'exception': '{0}'.format(sys.exc_info()[1]),
+                                    'rawmessage': line.decode('utf-8')
+                                }
+                                rejectout.write(json.dumps(msg) + '\n')
+                            timer.time('error')
+                            pass
+                        else:
+                            if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
+                                marketid = None
+                            sqltimestamp = timestamptosql(timestamp)
+                            sqlgwtimestamp = timestamptosql(gwtimestamp)
+                            timer.time('parse')
+                            if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
+                                if ((lineno + 1) not in stnlines 
+                                    or (lineno + 1) not in syslines
+                                    or (lineno + 1) not in infolines
+                                    or (lineno + 1) not in tslines
+                                    or (lineno + 1) not in softwarelines):
+
+                                    (station, rejectReason, rejectData) = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp, test = fileinfo.test)
+                                    timer.time('stnquery')
+
+                                    if station is not None:
+                                        if (lineno + 1) not in stnlines:
+                                            stntoinsert += [(fileinfo.id, lineno + 1, station)]
+                                            
+                                        if station.systemid is not None and (lineno + 1) not in syslines:
+                                            systoinsert += [(fileinfo.id, lineno + 1, EDDNSystem(station.systemid, None, station.systemname, None, None, None))]
+                                        if (lineno + 1) not in tslines:
+                                            timestamptoinsert += [(fileinfo.id, lineno + 1, (sqltimestamp - tsbasedate).total_seconds(), (sqlgwtimestamp - tsbasedate).total_seconds() * 10000000.0)]
+
+                                        if (lineno + 1) not in softwarelines:
+                                            sysdb.insertsoftware(software)
+                                            softwaretoinsert += [(fileinfo.id, lineno + 1, sysdb.software[software])]
+
+                                        if (lineno + 1) not in infolines:
+                                            sysdb.insertsoftware(software)
+                                            infotoinsert += [(
+                                                fileinfo.id,
+                                                lineno + 1,
+                                                sqltimestamp,
+                                                sqlgwtimestamp,
+                                                sysdb.software[software],
+                                                station.systemid,
+                                                None,
+                                                len(line),
+                                                None,
+                                                0,
+                                                0,
+                                                1 if 'marketId' in body else 0
+                                            )]
+
+                                    else:
+                                        #import pdb; pdb.set_trace()
+                                        #sysdb.addfilelinestationunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, None, stationname, marketid, sqltimestamp)
+                                        msg['rejectReason'] = rejectReason
+                                        msg['rejectData'] = rejectData
+                                        rejectout.write(json.dumps(msg) + '\n')
+                                        pass
+                    linecount += 1
+                    totalsize += len(line)
+                    if (linecount % 1000) == 0:
+                        sysdb.commit()
+                        if len(stntoinsert) != 0:
+                            sysdb.addfilelinestations(stntoinsert)
+                            timer.time('stninsert', len(stntoinsert))
+                            stntoinsert = []
+                        if len(systoinsert) != 0:
+                            sysdb.addfilelinesystems(systoinsert)
+                            timer.time('sysinsert', len(systoinsert))
+                            systoinsert = []
+                        if len(timestamptoinsert) != 0:
+                            sysdb.addfilelinetimestamps(timestamptoinsert)
+                            timer.time('timestampinsert', len(timestamptoinsert))
+                            timestamptoinsert = []
+                        if len(softwaretoinsert) != 0:
+                            sysdb.addfilelinesoftware(softwaretoinsert)
+                            timer.time('softwareinsert', len(softwaretoinsert))
+                            softwaretoinsert = []
+                        if len(infotoinsert) != 0:
+                            sysdb.addfilelineinfo(infotoinsert)
+                            timer.time('infoinsert', len(infotoinsert))
+                            infotoinsert = []
+                        sysdb.commit()
+                        sys.stderr.write('.')
+                        sys.stderr.flush()
+                
+                sysdb.commit()
+                if len(stntoinsert) != 0:
+                    sysdb.addfilelinestations(stntoinsert)
+                    timer.time('stninsert', len(stntoinsert))
+                    stntoinsert = []
+                if len(systoinsert) != 0:
+                    sysdb.addfilelinesystems(systoinsert)
+                    timer.time('sysinsert', len(systoinsert))
+                    systoinsert = []
+                if len(timestamptoinsert) != 0:
+                    sysdb.addfilelinetimestamps(timestamptoinsert)
+                    timer.time('timestampinsert', len(timestamptoinsert))
+                    timestamptoinsert = []
+                if len(softwaretoinsert) != 0:
+                    sysdb.addfilelinesoftware(softwaretoinsert)
+                    timer.time('softwareinsert', len(softwaretoinsert))
+                    softwaretoinsert = []
+                if len(infotoinsert) != 0:
+                    sysdb.addfilelineinfo(infotoinsert)
+                    timer.time('infoinsert', len(infotoinsert))
+                    infotoinsert = []
+                sysdb.commit()
+                sys.stderr.write('\n')
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0)
+        sysdb.commit()
+        timer.time('commit')
+
+def unhandledexception(type, value, traceback):
+    sys.__excepthook__(type, value, traceback)
+    if type is not KeyboardInterrupt:
+        import pdb; pdb.post_mortem(traceback)
+
 def main():
     args = argparser.parse_args()
-    reprocess = args.reprocess
-    market = args.market
-    timer = Timer({'init', 'load', 'read', 'parse', 'error', 'sysquery', 'sysqueryedts', 'sysquerypgre', 'sysquerylookup', 'sysselectmaddr', 'sysselectaddr', 'sysselectname', 'sysinsert', 'stnquery', 'stnselect', 'stninsert', 'commit', 'stats', 'syslookupbinsearch', 'bodyquery', 'bodyinsert', 'bodylookupname', 'bodyquerypgre', 'bodylookuppg', 'bodyselectname', 'bodyinsertpg', 'bodyupdateid', 'bodyqueryname', 'timestampinsert', 'edsmupdate'})
+    timer = Timer({
+        'init',
+        'load',
+        'read',
+        'parse',
+        'error',
+        'sysquery',
+        'sysqueryedts',
+        'sysquerypgre',
+        'sysquerylookup',
+        'sysselectmaddr',
+        'sysselectaddr',
+        'sysselectname',
+        'sysinsert',
+        'stnquery',
+        'stnselect',
+        'stninsert',
+        'commit',
+        'stats',
+        'syslookupbinsearch',
+        'bodyquery',
+        'bodyinsert',
+        'bodylookupname',
+        'bodyquerypgre',
+        'bodylookuppg',
+        'bodyselectname',
+        'bodyinsertpg',
+        'bodyupdateid',
+        'bodyqueryname',
+        'timestampinsert',
+        'softwareinsert',
+        'edsmupdate',
+        'eddbupdate',
+        'infoinsert',
+        'factionupdate',
+        'factioninsert'
+    })
+
+    sys.excepthook = unhandledexception
+
     try:
         conn = createconnection()
-        sysdb = EDDNSysDB(conn, args.edsmsys, args.edsmbodies)
+        sysdb = EDDNSysDB(conn, args.edsmsys, args.edsmbodies, args.eddbsys)
         timer.time('init')
 
         if not args.noeddn:
-            sys.stderr.write('Retrieving EDDN files from DB\n') 
-            sys.stderr.flush()
-            files = sysdb.getfiles()
-            timer.time('init', 0)
-            sys.stderr.write('Processing EDDN files\n')
-            sys.stderr.flush()
-            for filename, fileinfo in files.items():
-                if fileinfo.eventtype is not None:
-                    #if fileinfo.eventtype in ('Location'):
-                    #    continue
-                    if fileinfo.linecount is None or (reprocess == True and (fileinfo.linecount != fileinfo.syslinecount or (fileinfo.eventtype == 'Scan' and fileinfo.linecount != fileinfo.bodylinecount) or (fileinfo.eventtype == 'Docked' and fileinfo.linecount != fileinfo.stnlinecount))):
-                        fn = eddndir + '/' + filename
-                        if os.path.exists(fn):
-                            sys.stderr.write('{0}\n'.format(fn))
-                            with bz2.BZ2File(fn, 'r') as f:
-                                syslines = sysdb.getsystemfilelines(fileinfo.id)
-                                stnlines = sysdb.getstationfilelines(fileinfo.id)
-                                bodylines = sysdb.getbodyfilelines(fileinfo.id)
-                                tslines = sysdb.gettimestampfilelines(fileinfo.id)
-                                linecount = 0
-                                timer.time('load')
-                                systoinsert = []
-                                stntoinsert = []
-                                bodytoinsert = []
-                                timestamptoinsert = []
-                                for lineno, line in enumerate(f):
-                                    if (lineno + 1) not in syslines or (lineno + 1) not in bodylines:
-                                        timer.time('read')
-                                        try:
-                                            msg = json.loads(line)
-                                            body = msg['message']
-                                            hdr = msg['header']
-                                            sysname = body['StarSystem']
-                                            starpos = body['StarPos']
-                                            sysaddr = body['SystemAddress'] if 'SystemAddress' in body else None
-                                            stationname = body['StationName'] if 'StationName' in body else None
-                                            marketid = body['MarketID'] if 'MarketID' in body else None
-                                            stationtype = body['StationType'] if 'StationType' in body else None
-                                            bodyname = body['Body'] if 'Body' in body else None
-                                            bodyid = body['BodyID'] if 'BodyID' in body else None
-                                            bodytype = body['BodyType'] if 'BodyType' in body else None
-                                            scanbodyname = body['BodyName'] if 'BodyName' in body else None
-                                            parents = body['Parents'] if 'Parents' in body else None
-                                            timestamp = body['timestamp'] if 'timestamp' in body else None
-                                            gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
-                                        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                                            sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
-                                            timer.time('error')
-                                            pass
-                                        else:
-                                            if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
-                                                marketid = None
-                                            sqltimestamp = timestamptosql(timestamp)
-                                            sqlgwtimestamp = timestamptosql(gwtimestamp)
-                                            timer.time('parse')
-                                            if sqltimestamp is not None:
-                                                if (lineno + 1) not in tslines and sqltimestamp is not None and sqlgwtimestamp is not None:
-                                                    timestamptoinsert += [(fileinfo.id, lineno + 1, (sqltimestamp - tsbasedate).total_seconds(), (sqlgwtimestamp - tsbasedate).total_seconds() * 10000000.0)]
-                                                
-                                                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
-                                                system = sysdb.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
-                                                timer.time('sysquery')
-                                                if system is not None:
-                                                    reject = False
-
-                                                    if (lineno + 1) not in stnlines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
-                                                        if stationname is not None and stationname != '':
-                                                            station = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp, system, stationtype, bodyname, bodyid, bodytype)
-                                                            timer.time('stnquery')
-
-                                                            if station is not None:
-                                                                stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                                                            else:
-                                                                reject = True
-                                                                #import pdb; pdb.set_trace()
-                                                                #sysdb.addfilelinestationunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, system.id, stationname, marketid, sqltimestamp)
-                                                                pass
-                                                        elif bodyname is not None and bodytype is not None and bodytype == 'Station':
-                                                            station = sysdb.getstation(timer, bodyname, sysname, None, sqltimestamp, system = system, bodyid = bodyid)
-                                                            timer.time('stnquery')
-
-                                                            if station is not None:
-                                                                stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                                                            else:
-                                                                reject = True
-                                                                #import pdb; pdb.set_trace()
-                                                                #sysdb.addfilelinestationunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, system.id, bodyname, marketid, sqltimestamp)
-                                                                pass
-
-                                                    if (lineno + 1) not in bodylines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
-                                                        if scanbodyname is not None:
-                                                            scanbody = sysdb.getbody(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
-                                                            if scanbody is not None:
-                                                                sysdb.insertbodyparents(timer, scanbody.id, system, bodyid, parents)
-                                                                bodytoinsert += [(fileinfo.id, lineno + 1, scanbody)]
-                                                            else:
-                                                                reject = True
-                                                                sysdb.addfilelinebodyunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, system.id, scanbodyname, bodyid, sqltimestamp)
-                                                            timer.time('bodyquery')
-
-                                                    if (lineno + 1) not in syslines and not reject:
-                                                        systoinsert += [(fileinfo.id, lineno + 1, system)]
-
-                                                else:
-                                                    sysdb.addfilelinesystemunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, sysaddr, starpos[0], starpos[1], starpos[2], sqltimestamp)
-                                                
-                                    linecount += 1
-                                    if (linecount % 1000) == 0:
-                                        conn.commit()
-                                        if len(systoinsert) != 0:
-                                            sysdb.addfilelinesystems(systoinsert)
-                                            timer.time('sysinsert', len(systoinsert))
-                                            systoinsert = []
-                                        if len(stntoinsert) != 0:
-                                            sysdb.addfilelinestations(stntoinsert)
-                                            timer.time('stninsert', len(stntoinsert))
-                                            stntoinsert = []
-                                        if len(bodytoinsert) != 0:
-                                            sysdb.addfilelinebodies(bodytoinsert)
-                                            timer.time('bodyinsert', len(bodytoinsert))
-                                            bodytoinsert = []
-                                        if len(timestamptoinsert) != 0:
-                                            sysdb.addfilelinetimestamps(timestamptoinsert)
-                                            timer.time('timestampinsert', len(timestamptoinsert))
-                                            timestamptoinsert = []
-                                        conn.commit()
-                                        sys.stderr.write('.')
-                                        sys.stderr.flush()
-                                
-                                conn.commit()
-                                if len(systoinsert) != 0:
-                                    sysdb.addfilelinesystems(systoinsert)
-                                    timer.time('sysinsert', len(systoinsert))
-                                    systoinsert = []
-                                if len(stntoinsert) != 0:
-                                    sysdb.addfilelinestations(stntoinsert)
-                                    timer.time('stninsert', len(stntoinsert))
-                                    stntoinsert = []
-                                if len(bodytoinsert) != 0:
-                                    sysdb.addfilelinebodies(bodytoinsert)
-                                    timer.time('bodyinsert', len(bodytoinsert))
-                                    bodytoinsert = []
-                                if len(timestamptoinsert) != 0:
-                                    sysdb.addfilelinetimestamps(timestamptoinsert)
-                                    timer.time('timestampinsert', len(timestamptoinsert))
-                                    timestamptoinsert = []
-
-                                conn.commit()
-
-                                sys.stderr.write('\n')
-                                sysdb.updatelinecount(fileinfo.id, linecount)
-                else:
-                    if market and (fileinfo.linecount is None or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)):
-                        fn = eddndir + '/' + filename
-                        if os.path.exists(fn):
-                            sys.stderr.write('{0}\n'.format(fn))
-                            with bz2.BZ2File(fn, 'r') as f:
-                                stnlines = sysdb.getstationfilelines(fileinfo.id)
-                                tslines = sysdb.gettimestampfilelines(fileinfo.id)
-                                linecount = 0
-                                stntoinsert = []
-                                timestamptoinsert = []
-                                timer.time('load')
-                                for lineno, line in enumerate(f):
-                                    if (lineno + 1) not in stnlines:
-                                        timer.time('read')
-                                        try:
-                                            msg = json.loads(line)
-                                            body = msg['message']
-                                            hdr = msg['header']
-                                            sysname = body['systemName']
-                                            stationname = body['stationName']
-                                            marketid = body['marketId'] if 'marketId' in body else None
-                                            timestamp = body['timestamp'] if 'timestamp' in body else None
-                                            gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
-                                        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                                            print('Error: {0}'.format(sys.exc_info()[0]))
-                                            timer.time('error')
-                                            pass
-                                        else:
-                                            if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
-                                                marketid = None
-                                            sqltimestamp = timestamptosql(timestamp)
-                                            sqlgwtimestamp = timestamptosql(gwtimestamp)
-                                            timer.time('parse')
-                                            if sqltimestamp is not None:
-                                                if (lineno + 1) not in tslines and sqltimestamp is not None and sqlgwtimestamp is not None:
-                                                    timestamptoinsert += [(fileinfo.id, lineno + 1, (sqltimestamp - tsbasedate).total_seconds(), (sqlgwtimestamp - tsbasedate).total_seconds() * 10000000.0)]
-                                                
-                                                station = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp)
-                                                timer.time('stnquery')
-
-                                                if station is not None:
-                                                    stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                                                else:
-                                                    #import pdb; pdb.set_trace()
-                                                    #sysdb.addfilelinestationunresolved(fileinfo.id, lineno + 1, line.strip(), sysname, None, stationname, marketid, sqltimestamp)
-                                                    pass
-                                    linecount += 1
-                                    if (linecount % 1000) == 0:
-                                        conn.commit()
-                                        if len(stntoinsert) != 0:
-                                            sysdb.addfilelinestations(stntoinsert)
-                                            timer.time('stninsert', len(stntoinsert))
-                                            stntoinsert = []
-                                        if len(timestamptoinsert) != 0:
-                                            sysdb.addfilelinetimestamps(timestamptoinsert)
-                                            timer.time('timestampinsert', len(timestamptoinsert))
-                                            timestamptoinsert = []
-                                        conn.commit()
-                                        sys.stderr.write('.')
-                                        sys.stderr.flush()
-                                
-                                conn.commit()
-                                if len(stntoinsert) != 0:
-                                    sysdb.addfilelinestations(stntoinsert)
-                                    timer.time('stninsert', len(stntoinsert))
-                                    stntoinsert = []
-                                if len(timestamptoinsert) != 0:
-                                    sysdb.addfilelinetimestamps(timestamptoinsert)
-                                    timer.time('timestampinsert', len(timestamptoinsert))
-                                    timestamptoinsert = []
-                                conn.commit()
-                                sys.stderr.write('\n')
-                                sysdb.updatelinecount(fileinfo.id, linecount)
-                    conn.commit()
-                    timer.time('commit')
+            with open(eddnrejectfile, 'at') as rf:
+                sys.stderr.write('Retrieving EDDN files from DB\n') 
+                sys.stderr.flush()
+                files = sysdb.getfiles()
+                timer.time('init', 0)
+                sys.stderr.write('Processing EDDN files\n')
+                sys.stderr.flush()
+                for filename, fileinfo in files.items():
+                    if fileinfo.eventtype is not None:
+                        processeddnjournalfile(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
+                    elif args.market:
+                        processeddnmarketfile(sysdb, timer, filename, fileinfo, args.reprocess, rf)
 
         if args.edsmsys:
-            sys.stderr.write('Processing EDSM systems\n')
-            with bz2.BZ2File(edsmsysfile, 'r') as f:
-                w = 0
-                for i, line in enumerate(f):
-                    timer.time('read')
-                    try:
-                        msg = json.loads(line)
-                        edsmsysid = msg['id']
-                        sysaddr = msg['id64']
-                        sysname = msg['name']
-                        coords = msg['coords']
-                        starpos = [coords['x'],coords['y'],coords['z']]
-                        timestamp = msg['date'].replace(' ', 'T')
-                    except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                        sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
-                        timer.time('error')
-                        pass
-                    else:
-                        sqltimestamp = timestamptosql(timestamp)
-                        sqlts = int((sqltimestamp - tsbasedate).total_seconds())
-                        timer.time('parse')
-                        (sysid, ts) = sysdb.findedsmsysid(edsmsysid)
-                        timer.time('sysquery')
-                        if not sysid or ts != sqlts:
-                            starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
-                            system = sysdb.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
-                            timer.time('sysquery', 0)
-
-                            if system is not None:
-                                sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp)
-                            timer.time('edsmupdate')
-                            w += 1
-
-                    if ((i + 1) % 1000) == 0:
-                        conn.commit()
-                        sys.stderr.write('.' if w == 0 else '*')
-                        sys.stderr.flush()
-                        w = 0
-
-                        if ((i + 1) % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(i + 1))
-                            sys.stderr.flush()
-                        timer.time('commit')
-                            
-            sys.stderr.write('  {0}\n'.format(i + 1))
-            sys.stderr.flush()
-            conn.commit()
-            timer.time('commit')
+            with open(edsmsysrejectfile, 'at') as rf:
+                processedsmsystems(sysdb, timer, rf)
         
         if args.edsmbodies:
-            sys.stderr.write('Processing EDSM bodies\n')
-            with bz2.BZ2File(edsmbodiesfile, 'r') as f:
-                w = 0
-                for i, line in enumerate(f):
-                    try:
-                        msg = json.loads(line)
-                        edsmbodyid = msg['id']
-                        bodyid = msg['bodyId']
-                        bodyname = msg['name']
-                        edsmsysid = msg['systemId']
-                        sysname = msg['systemName']
-                        timestamp = msg['updateTime'].replace(' ', 'T')
-                        periapsis = msg['argofPeriapsis'] if 'argOfPeriapsis' in msg else None
-                        semimajor = msg['semiMajorAxis'] if 'semiMajorAxis' in msg else None
-                        bodytype = msg['type']
-                        subtype = msg['subType']
-                    except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                        sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
-                        timer.time('error')
-                        pass
-                    else:
-                        sqltimestamp = timestamptosql(timestamp)
-                        timer.time('parse')
-                        sysid = sysdb.findedsmsysid(edsmsysid)
-                        if sysid:
-                            system = sysdb.getsystembyid(sysid)
-                            timer.time('sysquery')
+            with open(edsmbodiesrejectfile, 'at') as rf:
+                processedsmbodies(sysdb, timer, rf)
 
-                            if system is not None:
-                                body = {}
-                                
-                                if bodytype == 'Planet':
-                                    body['PlanetClass'] = subtype
-                                elif bodytype == 'Star':
-                                    body['StarType'] = subtype
-                                
-                                if periapsis is not None:
-                                    body['Periapsis'] = periapsis
-                                
-                                if semimajor:
-                                    body['SemiMajorAxis'] = semimajor * 149597870700
-                                
-                                scanbody = sysdb.getbody(timer, bodyname, sysname, bodyid, system, body, sqltimestamp)
+        if args.edsmstations:
+            with open(edsmstationsrejectfile, 'at') as rf:
+                processedsmstations(sysdb, timer, rf)
 
-                                if scanbody:
-                                    sysdb.updateedsmbodyid(scanbody.id, edsmbodyid, sqltimestamp)
-                                
-                                timer.time('bodyquery')
-
-                    if ((i + 1) % 1000) == 0:
-                        conn.commit()
-                        sys.stderr.write('.')
-                        sys.stderr.flush()
-
-                        if ((i + 1) % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(i + 1))
-                            sys.stderr.flush()
-
-            sys.stderr.write('  {0}\n'.format(i + 1))
-            sys.stderr.flush()
-            conn.commit()
-            timer.time('commit')
-
+        if args.eddbsys:
+            with open(eddbsysrejectfile, 'at') as rf:
+                processeddbsystems(sysdb, timer, rf)
                             
     finally:
         timer.printstats()
