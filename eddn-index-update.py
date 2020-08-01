@@ -21,8 +21,9 @@ import argparse
 import csv
 import eddnindex.config as config
 import eddnindex.mysqlutils as mysql
+import urllib.request
 
-eddndir = config.rootdir + '/EDDN'
+eddndir = config.rootdir + '/EDDN/data'
 edsmdumpdir = config.rootdir + '/EDSM/dumps'
 edsmbodiesdir = config.rootdir + '/EDSM/bodies'
 eddbdir = config.rootdir + '/EDDB/dumps'
@@ -37,6 +38,8 @@ edsmbodiesrejectfile = config.outdir + '/edsmbodies-index-update-reject.jsonl'
 edsmstationsrejectfile = config.outdir + '/edsmstations-index-update-reject.jsonl'
 eddbsysrejectfile = config.outdir + '/eddbsys-index-update-reject.jsonl'
 eddbstationsrejectfile = config.outdir + '/eddbstations-index-update-reject.jsonl'
+
+knownbodiessheeturi = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR9lEav_Bs8rZGRtwcwuOwQ2hIoiNJ_PWYAEgXk7E3Y-UD0r6uER04y4VoQxFAAdjMS4oipPyySoC3t/pub?gid=711269421&single=true&output=tsv'
 
 allow303bodies = True
 
@@ -90,6 +93,7 @@ EDSMFile = namedtuple('EDSMFile', ['id', 'name', 'date', 'linecount', 'bodylinec
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
 argparser.add_argument('--reprocess', dest='reprocess', action='store_const', const=True, default=False, help='Reprocess files with unprocessed entries')
 argparser.add_argument('--reprocess-all', dest='reprocessall', action='store_const', const=True, default=False, help='Reprocess all files')
+argparser.add_argument('--nojournal', dest='nojournal', action='store_const', const=True, default=False, help='Skip ijournal messages')
 argparser.add_argument('--market', dest='market', action='store_const', const=True, default=False, help='Process market/shipyard/outfitting messages')
 argparser.add_argument('--edsmsys', dest='edsmsys', action='store_const', const=True, default=False, help='Process EDSM systems dump')
 argparser.add_argument('--edsmbodies', dest='edsmbodies', action='store_const', const=True, default=False, help='Process EDSM bodies dump')
@@ -120,6 +124,7 @@ class EDDNSysDB(object):
         self.bodydesigs = {}
         self.software = {}
         self.factions = {}
+        self.knownbodies = {}
         self.edsmsysids = None
         self.edsmbodyids = None
         self.eddbsysids = None
@@ -147,7 +152,8 @@ class EDDNSysDB(object):
                 'loadparents',
                 'loadsoftware',
                 'loadbodydesigs',
-                'loadfactions'
+                'loadfactions',
+                'loadknownbodies'
             })
             self.loadregions(conn, timer)
             self.loadnamedsystems(conn, timer)
@@ -156,6 +162,7 @@ class EDDNSysDB(object):
             self.loadsoftware(conn, timer)
             self.loadbodydesigs(conn, timer)
             self.loadfactions(conn, timer)
+            self.loadknownbodies(timer)
 
             if loadedsmsys or loadedsmbodies:
                 self.loadedsmsystems(conn, timer)
@@ -398,6 +405,33 @@ class EDDNSysDB(object):
                 self.factions[fi.name] += [fi]
 
         timer.time('loadfactions')
+
+    def loadknownbodies(self, timer):
+        sys.stderr.write('Loading Known Bodies\n')
+        knownbodies = {}
+
+        with urllib.request.urlopen(knownbodiessheeturi) as f:
+            for line in f:
+                fields = line.decode('utf-8').strip().split('\t')
+                if len(fields) >= 7 and fields[0] != 'SystemAddress' and fields[0] != '' and fields[3] != '' and fields[4] != '' and fields[6] != '':
+                    sysaddr = int(fields[0])
+                    sysname = fields[2]
+                    bodyid = int(fields[3])
+                    bodyname = fields[4]
+                    bodydesig = fields[6]
+                    desig = bodyname[len(sysname):]
+
+                    if desig in self.bodydesigs:
+                        desigid = self.bodydesigs[desig]
+                        if sysname not in knownbodies:
+                            knownbodies[sysname] = {}
+                        sysknownbodies = knownbodies[sysname]
+                        if bodyname not in sysknownbodies:
+                            sysknownbodies[bodyname] = []
+                        sysknownbodies[bodyname] += [{ 'SystemAddress': sysaddr, 'SystemName': sysname, 'BodyID': bodyid, 'BodyName': bodyname, 'BodyDesignation': bodydesig, 'BodyDesignationId': desigid }]
+
+        self.knownbodies = knownbodies
+        timer.time('loadknownbodies')
 
     def commit(self):
         self.conn.commit()
@@ -960,6 +994,17 @@ class EDDNSysDB(object):
                 ispgname = False
 
         desigid = None
+
+        if sysname in self.knownbodies and name in self.knownbodies[sysname]:
+            knownbodies = self.knownbodies[sysname][name]
+            if bodyid is not None:
+                knownbodies = [ row for row in knownbodies if row['BodyID'] == bodyid ]
+            if len(knownbodies) == 1:
+                knownbody = knownbodies[0]
+                if knownbody['BodyDesignation'] != knownbody['BodyName']:
+                    ispgname = False
+                    desigid = knownbody['BodyDesignationId']
+
         if ispgname:
             timer.time('bodyquery', 0)
             desig = name[len(sysname):]
@@ -1197,14 +1242,15 @@ class EDDNSysDB(object):
             if not ispgname and pgsysre.match(name):
                 return (None, 'Body Mismatch', [{'System': sysname, 'Body': name}])
 
-            return (None, 'Unknown named body', [{'System': sysname, 'Body': name}])
+            if desigid is None:
+                return (None, 'Unknown named body', [{'System': sysname, 'Body': name}])
                 
             cursor = self.conn.cursor()
             cursor.execute(
                 'INSERT INTO SystemBodies ' +
                 '(SystemId,  HasBodyId, BodyId,      BodyDesignationId, IsNamedBody) VALUES '
-                '(%s,        %s,        %s,          0,                 1)',
-                 (system.id, 1 if bodyid is not None else 0, bodyid or 0)
+                '(%s,        %s,        %s,          %s,                 1)',
+                 (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
             )
             rowid = cursor.lastrowid
             if rowid is None:
@@ -2011,12 +2057,13 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                                         if stnfaction is not None:
                                             if type(stnfaction) is dict and 'Name' in stnfaction:
                                                 stnfaction = stnfaction['Name']
-                                            linefactiondata += [{
-                                                'Name': stnfaction,
-                                                'Government': stngovern,
-                                                'EntryNum': -2
-                                            }]
-                                            linefactions += [(-2, sysdb.getfaction(timer, stnfaction, stngovern, None))]
+                                            if stnfaction != 'FleetCarrier':
+                                                linefactiondata += [{
+                                                    'Name': stnfaction,
+                                                    'Government': stngovern,
+                                                    'EntryNum': -2
+                                                }]
+                                                linefactions += [(-2, sysdb.getfaction(timer, stnfaction, stngovern, None))]
 
                                         if len(linefactions) != 0:
                                             if len([fid for n, fid in linefactions if fid is None]) != 0:
@@ -2277,9 +2324,10 @@ def main():
                 timer.time('init', 0)
                 sys.stderr.write('Processing EDDN files\n')
                 sys.stderr.flush()
-                for filename, fileinfo in files.items():
-                    if fileinfo.eventtype is not None:
-                        processeddnjournalfile(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
+                if not args.nojournal:
+                    for filename, fileinfo in files.items():
+                        if fileinfo.eventtype is not None:
+                            processeddnjournalfile(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
                 if args.market:
                     for filename, fileinfo in files.items():
                         if fileinfo.eventtype is None:
