@@ -419,7 +419,18 @@ class EDDNSysDB(object):
                     bodyid = int(fields[3])
                     bodyname = fields[4]
                     bodydesig = fields[6]
-                    desig = bodyname[len(sysname):]
+                    desig = bodydesig[len(sysname):]
+
+                    if desig not in self.bodydesigs:
+                        cursor = self.conn.cursor()
+                        cursor.execute('SELECT Id, BodyDesignation FROM SystemBodyDesignations WHERE BodyDesignation = %s', (desig,))
+                        row = cursor.fetchone()
+                        
+                        if row and row[1] == desig:
+                            desigid = int(row[0])
+                            self.bodydesigs[desig] = desigid
+                            cursor = self.conn.cursor()
+                            cursor.execute('UPDATE SystemBodyDesignations SET IsUsed = 1 WHERE Id = %s', (desigid,))
 
                     if desig in self.bodydesigs:
                         desigid = self.bodydesigs[desig]
@@ -429,6 +440,8 @@ class EDDNSysDB(object):
                         if bodyname not in sysknownbodies:
                             sysknownbodies[bodyname] = []
                         sysknownbodies[bodyname] += [{ 'SystemAddress': sysaddr, 'SystemName': sysname, 'BodyID': bodyid, 'BodyName': bodyname, 'BodyDesignation': bodydesig, 'BodyDesignationId': desigid }]
+                    else:
+                        import pdb; pdb.set_trace()
 
         self.knownbodies = knownbodies
         timer.time('loadknownbodies')
@@ -994,16 +1007,20 @@ class EDDNSysDB(object):
                 ispgname = False
 
         desigid = None
+        sysknownbodies = None
+        knownbodies = None
 
-        if sysname in self.knownbodies and name in self.knownbodies[sysname]:
-            knownbodies = self.knownbodies[sysname][name]
-            if bodyid is not None:
-                knownbodies = [ row for row in knownbodies if row['BodyID'] == bodyid ]
-            if len(knownbodies) == 1:
-                knownbody = knownbodies[0]
-                if knownbody['BodyDesignation'] != knownbody['BodyName']:
-                    ispgname = False
-                    desigid = knownbody['BodyDesignationId']
+        if sysname in self.knownbodies:
+            sysknownbodies = self.knownbodies[sysname]
+            if name in sysknownbodies:
+                knownbodies = self.knownbodies[sysname][name]
+                if bodyid is not None:
+                    knownbodies = [ row for row in knownbodies if row['BodyID'] == bodyid ]
+                if len(knownbodies) == 1:
+                    knownbody = knownbodies[0]
+                    if knownbody['BodyDesignation'] != knownbody['BodyName']:
+                        ispgname = False
+                        desigid = knownbody['BodyDesignationId']
 
         if ispgname:
             timer.time('bodyquery', 0)
@@ -1243,6 +1260,9 @@ class EDDNSysDB(object):
                 return (None, 'Body Mismatch', [{'System': sysname, 'Body': name}])
 
             if desigid is None:
+                if 'debugunknownbodies' in os.environ and (sysknownbodies is not None or 'debugunknownbodysystems' in os.environ):
+                    import pdb; pdb.set_trace()
+                    
                 return (None, 'Unknown named body', [{'System': sysname, 'Body': name}])
                 
             cursor = self.conn.cursor()
