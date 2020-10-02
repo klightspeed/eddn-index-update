@@ -22,6 +22,7 @@ import csv
 import eddnindex.config as config
 import eddnindex.mysqlutils as mysql
 import urllib.request
+from setproctitle import getproctitle, setproctitle
 
 eddndir = config.rootdir + '/EDDN/data'
 edsmdumpdir = config.rootdir + '/EDSM/dumps'
@@ -101,6 +102,7 @@ argparser.add_argument('--edsmstations', dest='edsmstations', action='store_cons
 argparser.add_argument('--eddbsys', dest='eddbsys', action='store_const', const=True, default=False, help='Process EDDB systems dump')
 argparser.add_argument('--eddbstations', dest='eddbstations', action='store_const', const=True, default=False, help='Process EDDB stations dump')
 argparser.add_argument('--noeddn', dest='noeddn', action='store_const', const=True, default=False, help='Skip EDDN processing')
+argparser.add_argument('--processtitleprogress', dest='proctitleprogress', action='store_const', const=True, default=False, help='Update process title with progress')
 
 EDSMStationTypes = {
     'Asteroid base': 'AsteroidBase',
@@ -112,6 +114,18 @@ EDSMStationTypes = {
     'Planetary Outpost': 'CraterOutpost',
     'Planetary Port': 'CraterPort'
 }
+
+proctitleprogresspos = None
+
+def updatetitleprogress(progress):
+    title = getproctitle()
+
+    if proctitleprogresspos is None:
+        proctitleprogresspos = title.find('--processtitleprogress')
+
+    if proctitleprogresspos > 0:
+        title = title[0:proctitleprogresspos] + '[{0:20.20s}]'.format(progress) + title[proctitleprogresspos + 22:]
+        setproctitle(title)
 
 class EDDNSysDB(object):
     def __init__(self, conn, loadedsmsys, loadedsmbodies, loadeddbsys):
@@ -1705,9 +1719,11 @@ def processedsmbodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
                         if (linecount % 64000) == 0:
                             sys.stderr.write('  {0}\n'.format(linecount))
                             sys.stderr.flush()
+                            updatetitleprogress('Body:{0}:{1}'.format(fileinfo.date.isoformat()[:10],linecount))
 
             sys.stderr.write('  {0}\n'.format(linecount))
             sys.stderr.flush()
+            updatetitleprogress('Body:{0}:{1}'.format(fileinfo.date.isoformat()[:10],linecount))
             sysdb.commit()
             timer.time('commit')
             sysdb.updateedsmfileinfo(fileinfo.id, linecount, totalsize, comprsize)
@@ -1846,6 +1862,7 @@ def processedsmsystems(sysdb, timer, rejectout):
                 if ((i + 1) % 64000) == 0:
                     sys.stderr.write('  {0}\n'.format(i + 1))
                     sys.stderr.flush()
+                    updatetitleprogress('EDSMSys:{0}'.format(i + 1))
                 timer.time('commit')
                     
     sys.stderr.write('  {0}\n'.format(i + 1))
@@ -1905,6 +1922,7 @@ def processeddbsystems(sysdb, timer, rejectout):
                 if ((i + 1) % 64000) == 0:
                     sys.stderr.write('  {0}\n'.format(i + 1))
                     sys.stderr.flush()
+                    updatetitleprogress('EDDBSys:{0}'.format(i + 1))
                 timer.time('commit')
                     
     sys.stderr.write('  {0}\n'.format(i + 1))
@@ -1925,6 +1943,7 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
+            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.eventtype))
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -2180,6 +2199,7 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
+            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], filename.split('-')[0]))
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
