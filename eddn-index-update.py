@@ -73,6 +73,36 @@ pgbodyre = re.compile(
       )
       $
    ''', re.VERBOSE)
+pgsysbodyre = re.compile(
+    '''
+      ^
+      (?P<sysname>.+?)
+      (?P<desig>|[ ](?P<stars>A?B?C?D?E?F?G?H?I?J?K?L?M?N?O?))
+      (?:
+       |[ ](?P<nebula>Nebula)
+       |[ ](?P<belt>[A-Z])[ ]Belt(?:|[ ]Cluster[ ](?P<cluster>[1-9][0-9]?))
+       |[ ]Comet[ ](?P<stellarcomet>[1-9][0-9]?)
+       |[ ](?P<planet>[1-9][0-9]?(?:[+][1-9][0-9]?)*)
+        (?:
+         |[ ](?P<planetring>[A-Z])[ ]Ring
+         |[ ]Comet[ ](?P<planetcomet>[1-9][0-9]?)
+         |[ ](?P<moon1>[a-z](?:[+][a-z])*)
+          (?:
+           |[ ](?P<moon1ring>[A-Z])[ ]Ring
+           |[ ]Comet[ ](?P<moon1comet>[1-9][0-9]?)
+           |[ ](?P<moon2>[a-z](?:[+][a-z])*)
+            (?:
+             |[ ](?P<moon2ring>[A-Z])[ ]Ring
+             |[ ]Comet[ ](?P<moon2comet>[1-9][0-9]?)
+             |[ ](?P<moon3>[a-z])
+            )
+          )
+        )
+      )
+      $
+   ''', re.VERBOSE)
+
+
 timestampre = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-5][0-9])')
 carriernamere = re.compile('^[A-Z0-9]{3}-[A-Z0-9]{3}$')
 
@@ -118,6 +148,8 @@ EDSMStationTypes = {
 proctitleprogresspos = None
 
 def updatetitleprogress(progress):
+    global proctitleprogresspos
+
     title = getproctitle()
 
     if proctitleprogresspos is None:
@@ -519,6 +551,58 @@ class EDDNSysDB(object):
         y0 = y1 + (y2 << sx)
         z0 = z1 + (z2 << sx)
         return sz | (z0 << 3) | (y0 << (10 + sx)) | (x0 << (16 + sx * 2)) | (seq << (23 + sx * 3))
+
+    def findsystemsbyname(self, sysname):
+        systems = []
+
+        if sysname in self.namedsystems:
+            systems = self.namedsystems[sysname]
+            if type(systems) is not list:
+                systems = [systems]
+            systems = [ s for s in systems ]
+
+        pgsysmatch = pgsysre.match(sysname)
+        ri = None
+        modsysaddr = None
+
+        if pgsysmatch:
+            regionname = pgsysmatch[1]
+            mid1_2 = pgsysmatch[2].upper()
+            sizecls = pgsysmatch[3].lower()
+            mid3 = int(pgsysmatch[4] or "0")
+            seq = int(pgsysmatch[5])
+            mid1a = ord(mid1_2[0]) - 65
+            mid1b = ord(mid1_2[1]) - 65
+            mid2 = ord(mid1_2[3]) - 65
+            mid = (((mid3 * 26 + mid2) * 26 + mid1b) * 26 + mid1a)
+            sz = ord(sizecls) - 97
+            sx = 7 - sz
+            sp = 320 << sz
+            sb = 0x7F >> sz
+
+            if regionname.lower() in self.regions:
+                ri = self.regions[regionname.lower()]
+                modsysaddr = None
+                if ri.isharegion:
+                    x0 = math.floor(ri.x0 / sp) + (mid & 0x7F)
+                    y0 = math.floor(ri.y0 / sp) + ((mid >> 7) & 0x7F)
+                    z0 = math.floor(ri.z0 / sp) + ((mid >> 14) & 0x7F)
+                    x1 = x0 & sb
+                    x2 = x0 >> sx
+                    y1 = y0 & sb
+                    y2 = y0 >> sx
+                    z1 = z0 & sb
+                    z2 = z0 >> sx
+                    modsysaddr = (z2 << 53) | (y2 << 47) | (x2 << 40) | (sz << 37) | (z1 << 30) | (y1 << 23) | (x1 << 16) | seq
+                elif ri.regionaddr is not None:
+                    modsysaddr = (ri.regionaddr << 40) | (sz << 37) | (mid << 16) | seq
+
+                if modsysaddr is not None:
+                    cursor = self.conn.cursor()
+                    cursor.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
+                    systems += [ EDDNSystem(row[0], row[1], self._namestr(row[2]), row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105) for row in cursor ]
+
+        return systems
 
     @lru_cache(maxsize=262144)
     def getsystem(self, timer, sysname, x, y, z, sysaddr):
@@ -1228,6 +1312,9 @@ class EDDNSysDB(object):
             allrows += cursor.fetchall()
             frows = [ r for r in allrows if r[1].lower() == name.lower() ]
 
+            if bodyid is not None:
+                frows = [ r for r in frows if r[4] is None or r[4] == bodyid ]
+
             if len(frows) > 0:
                 if sysname in self.namedsystems:
                     systems = self.namedsystems[sysname]
@@ -1241,7 +1328,7 @@ class EDDNSysDB(object):
                         allrows += cursor.fetchall()
                 frows = [ r for r in allrows if r[1].lower() == name.lower() ]
                         
-                #import pdb; pdb.set_trace()
+                import pdb; pdb.set_trace()
                 return (
                     None, 
                     'Body Mismatch',
@@ -1270,14 +1357,51 @@ class EDDNSysDB(object):
                 timer.time('bodyinsertpg')
                 return (EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0), None, None)
                 
-            if not ispgname and pgsysre.match(name):
-                return (None, 'Body Mismatch', [{'System': sysname, 'Body': name}])
+            if (not ispgname and pgsysre.match(name)) or desigid is None:
+                allrows = []
+                cursor = self.conn.cursor()
+                cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sb WHERE sb.CustomName = %s', (name,))
+                allrows += cursor.fetchall()
+                pgsysbodymatch = pgsysbodyre.match(name)
 
-            if desigid is None:
-                if 'debugunknownbodies' in os.environ and (sysknownbodies is not None or 'debugunknownbodysystems' in os.environ):
-                    import pdb; pdb.set_trace()
-                    
-                return (None, 'Unknown named body', [{'System': sysname, 'Body': name}])
+                if pgsysbodymatch:
+                    dupsysname = pgsysbodymatch['sysname']
+                    desig = pgsysbodymatch['desig']
+                    dupsystems = self.findsystemsbyname(dupsysname)
+
+                    for dupsystem in dupsystems:
+                        cursor = self.conn.cursor()
+                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (dupsystem.id, ))
+                        allrows += cursor.fetchall()
+                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (dupsystem.id, ))
+                        allrows += cursor.fetchall()
+
+                frows = [ r for r in allrows if r[1].lower() == name.lower() ]
+
+                if len(frows) > 0:
+                    return (
+                        None,
+                        'Body in wrong system',
+                        [{
+                            'id': int(row[0]),
+                            'bodyName': row[1],
+                            'systemName': row[2],
+                            'systemId': int(row[3]),
+                            'bodyId': int(row[4]) if row[4] is not None else None,
+                            'bodyCategory': int(row[5]) if row[5] is not None else None,
+                            'argOfPeriapsis': float(row[6]) if row[6] is not None else None,
+                            'validFrom': row[7].isoformat(),
+                            'validUntil': row[8].isoformat(),
+                            'isRejected': True if row[9] else False
+                        } for row in rows]
+                    )
+                elif pgsysbodymatch:
+                    return (None, 'Procgen body in wrong system', [{'System': sysname, 'Body': name}])
+                else:
+                    if 'debugunknownbodies' in os.environ and (sysknownbodies is not None or 'debugunknownbodysystems' in os.environ):
+                        import pdb; pdb.set_trace()
+
+                    return (None, 'Unknown named body', [{'System': sysname, 'Body': name}])
                 
             cursor = self.conn.cursor()
             cursor.execute(
