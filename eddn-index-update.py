@@ -35,6 +35,7 @@ edsmbodiesfile = edsmdumpdir + '/bodies.jsonl.bz2'
 edsmstationsfile = edsmdumpdir + '/stations.json.gz'
 eddbsysfile = eddbdir + '/systems.csv.bz2'
 eddbstationsfile = eddbdir + '/stations.jsonl'
+edsmsyscachefile = config.outdir + '/edsmsys-index-update-syscache.bin'
 eddnrejectfile = config.outdir + '/eddn-index-update-reject.jsonl'
 edsmsysrejectfile = config.outdir + '/edsmsys-index-update-reject.jsonl'
 edsmbodiesrejectfile = config.outdir + '/edsmbodies-index-update-reject.jsonl'
@@ -234,39 +235,54 @@ class EDDNSysDB(object):
 
         if maxedsmsysid:
             sys.stderr.write('Loading EDSM System IDs\n')
-            c = mysql.makestreamingcursor(conn)
-            c.execute('SELECT Id, EdsmId, TimestampSeconds, HasCoords, IsHidden, IsDeleted FROM Systems_EDSM')
+            if os.path.exists(edsmsyscachefile):
+                with open(edsmsyscachefile, 'rb') as f:
+                    edsmsysarray = numpy.fromfile(f, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
 
-            edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
-            self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
-            timer.time('sql')
+                if len(edsmsysarray) > maxedsmsysid:
+                    if len(edsmsysarray) < maxedsmsysid + 524288:
+                        edsmsysarray = numpy.resize(edsmsysarray, maxedsmsysid + 1048576)
+                    self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
 
-            i = 0
-            maxedsmid = 0
-            while True:
-                rows = c.fetchmany(10000)
-                timer.time('sqledsmsys', len(rows))
-                if len(rows) == 0:
-                    break
-                for row in rows:
-                    edsmid = row[1]
-                    rec = edsmsysarray[edsmid]
-                    rec[0] = row[0]
-                    rec[1] = edsmid
-                    rec[2] = row[2]
-                    rec[3] = 1 if row[3] == b'\x01' else 0
-                    rec[4] = 1 if row[4] == b'\x01' else 0
-                    rec[5] = 1 if row[5] == b'\x01' else 0
-                    rec[6] = 0
-                    i += 1
-                    if edsmid > maxedsmid:
-                        maxedsmid = edsmid
-                sys.stderr.write('.')
-                if (i % 640000) == 0:
-                    sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmsysid, maxedsmid))
-                sys.stderr.flush()
-                timer.time('loadedsmsys', len(rows))
-            sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmsysid))
+                timer.time('loadedsmsys', len(edsmsysarray))
+
+            if self.edsmsysids is None:
+                c = mysql.makestreamingcursor(conn)
+                c.execute('SELECT Id, EdsmId, TimestampSeconds, HasCoords, IsHidden, IsDeleted FROM Systems_EDSM')
+
+                edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
+                self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
+                timer.time('sql')
+
+                i = 0
+                maxedsmid = 0
+                while True:
+                    rows = c.fetchmany(10000)
+                    timer.time('sqledsmsys', len(rows))
+                    if len(rows) == 0:
+                        break
+                    for row in rows:
+                        edsmid = row[1]
+                        rec = edsmsysarray[edsmid]
+                        rec[0] = row[0]
+                        rec[1] = edsmid
+                        rec[2] = row[2]
+                        rec[3] = 1 if row[3] == b'\x01' else 0
+                        rec[4] = 1 if row[4] == b'\x01' else 0
+                        rec[5] = 1 if row[5] == b'\x01' else 0
+                        rec[6] = 0
+                        i += 1
+                        if edsmid > maxedsmid:
+                            maxedsmid = edsmid
+                    sys.stderr.write('.')
+                    if (i % 640000) == 0:
+                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmsysid, maxedsmid))
+                    sys.stderr.flush()
+                    timer.time('loadedsmsys', len(rows))
+                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmsysid))
+                with open(edsmsyscachefile + '.tmp', 'wb') as f:
+                    self.edsmsysids.tofile(f)
+                os.rename(edsmsyscachefile + '.tmp', edsmsyscachefile)
 
     def loadeddbsystems(self, conn, timer):
         c = mysql.makestreamingcursor(conn)
@@ -541,10 +557,7 @@ class EDDNSysDB(object):
                     vz = int((starpos[2] + 24105) * 32)
                     c = self.conn.cursor()
                     c.execute('UPDATE Systems SET X = %s, Y = %s, Z = %s WHERE Id = %s', (vx, vy, vz, system.id))
-                    system.x = starpos[0]
-                    system.y = starpos[1]
-                    system.z = starpos[2]
-                    system.hascoords = True
+                    system = system._replace(x = starpos[0], y = starpos[1], z = starpos[2], hascoords = True)
                
                 return system
 
@@ -799,8 +812,8 @@ class EDDNSysDB(object):
         if system is not None:
             return (system, None, None)
 
-        if starpos is None:
-            import pdb; pdb.set_trace()
+        #if starpos is None:
+        #    import pdb; pdb.set_trace()
 
         if ri is not None and modsysaddr is not None:
             raddr = ((vz // 40960) << 13) | ((vy // 40960) << 7) | (vx // 40960)
@@ -1528,6 +1541,64 @@ class EDDNSysDB(object):
         else:
             return None
 
+    def updatesystemfromedsmbyid(self, edsmid, timer, rejectout):
+        url = 'https://www.edsm.net/api-v1/system?systemId={0}&coords=1&showId=1&submitted=1&includeHidden=1'.format(edsmid)
+        try:
+            with urllib.request.urlopen(url) as f:
+                msg = json.load(f)
+                info = f.info()
+            if type(msg) is dict:
+                edsmsysid = msg['id']
+                sysaddr = msg['id64']
+                sysname = msg['name']
+                timestamp = msg['date'].replace(' ', 'T')
+                if 'coords' in msg:
+                    coords = msg['coords']
+                    starpos = [coords['x'],coords['y'],coords['z']]
+                else:
+                    starpos = None
+            else:
+                timer.time('edsmhttp')
+                return False
+        except (OverflowError,ValueError,TypeError,json.JSONDecodeError,OSError):
+            (exctype, excvalue, traceback) = sys.exc_info()
+            import pdb; pdb.post_mortem(traceback)
+            sys.stderr.write('Error: {0}\n'.format(exctype))
+            timer.time('error')
+            return True
+        else:
+            timer.time('edsmhttp')
+            sqltimestamp = timestamptosql(timestamp)
+            sqlts = int((sqltimestamp - tsbasedate).total_seconds())
+            timer.time('parse')
+            (sysid, ts, hascoord, rec) = self.findedsmsysid(edsmsysid)
+            timer.time('sysquery')
+            if not sysid or ts != sqlts or not hascoord:
+                if starpos is not None:
+                    starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                    (system, rejectReason, rejectData) = self.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                else:
+                    (system, rejectReason, rejectData) = self.getsystem(timer, sysname, None, None, None, sysaddr)
+                    
+                timer.time('sysquery', 0)
+
+                if system is not None:
+                    rec = self.updateedsmsysid(edsmsysid, system.id, sqltimestamp, starpos is not None, False, False)
+                else:
+                    rejectmsg = {
+                        'rejectReason': rejectReason,
+                        'rejectData': rejectData,
+                        'data': msg
+                    }
+                    rejectout.write(json.dumps(rejectmsg) + '\n')
+
+                timer.time('edsmupdate')
+
+            if rec is not None:
+                rec.processed = 1
+
+            return True
+
     def findedsmsysid(self, edsmid):
         if self.edsmsysids is not None and len(self.edsmsysids) > edsmid:
             row = self.edsmsysids[edsmid]
@@ -1544,8 +1615,15 @@ class EDDNSysDB(object):
         else:
             return (None, None, None, None)
 
+    def saveedsmsyscache(self):
+        with open(edsmsyscachefile + '.tmp', 'wb') as f:
+            self.edsmsysids.tofile(f)
+        os.rename(edsmsyscachefile + '.tmp', edsmsyscachefile)
+
     def updateedsmsysid(self, edsmid, sysid, ts, hascoords, ishidden, isdeleted):
-        ts = int((ts - tsbasedate).total_seconds())
+        if type(ts) is datetime:
+            ts = int((ts - tsbasedate).total_seconds())
+
         c = self.conn.cursor()
         c.execute('INSERT INTO Systems_EDSM SET ' +
                   'EdsmId = %s, Id = %s, TimestampSeconds = %s, HasCoords = %s, IsHidden = %s, IsDeleted = %s ' +
@@ -1553,6 +1631,19 @@ class EDDNSysDB(object):
                   'Id = %s, TimestampSeconds = %s, HasCoords = %s, IsHidden = %s, IsDeleted = %s',
                   (edsmid, sysid, ts, 1 if hascoords else 0, 1 if ishidden else 0, 1 if isdeleted else 0,
                            sysid, ts, 1 if hascoords else 0, 1 if ishidden else 0, 1 if isdeleted else 0))
+
+        if edsmid < len(self.edsmsysids):
+            rec = self.edsmsysids[edsmid]
+            rec[0] = sysid
+            rec[1] = edsmid
+            rec[2] = ts
+            rec[3] = 1 if hascoords else 0
+            rec[4] = 1 if ishidden else 0
+            rec[5] = 1 if isdeleted else 0
+            return rec
+        else:
+            return None
+
     
     def updateedsmbodyid(self, edsmid, bodyid, ts):
         ts = int((ts - tsbasedate).total_seconds())
@@ -1975,6 +2066,9 @@ def processedsmstations(sysdb, timer, rejectout):
 
 def processedsmsystems(sysdb, timer, rejectout):
     sys.stderr.write('Processing EDSM systems\n')
+    for rec in sysdb.edsmsysids:
+        rec.processed = 0
+
     with bz2.BZ2File(edsmsysfile, 'r') as f:
         w = 0
         for i, line in enumerate(f):
@@ -2009,7 +2103,7 @@ def processedsmsystems(sysdb, timer, rejectout):
                     timer.time('sysquery', 0)
 
                     if system is not None:
-                        sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, True, False, False)
+                        rec = sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, True, False, False)
                     else:
                         rejectmsg = {
                             'rejectReason': rejectReason,
@@ -2034,11 +2128,13 @@ def processedsmsystems(sysdb, timer, rejectout):
                     sys.stderr.write('  {0}\n'.format(i + 1))
                     sys.stderr.flush()
                     updatetitleprogress('EDSMSys:{0}'.format(i + 1))
+                    sysdb.saveedsmsyscache()
                 timer.time('commit')
                     
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
     sysdb.commit()
+    sysdb.saveedsmsyscache()
     timer.time('commit')
 
 def processedsmsystemswithoutcoords(sysdb, timer, rejectout):
@@ -2074,7 +2170,7 @@ def processedsmsystemswithoutcoords(sysdb, timer, rejectout):
                     timer.time('sysquery', 0)
 
                     if system is not None:
-                        sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, False, False, False)
+                        rec = sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, False, False, False)
                     else:
                         rejectmsg = {
                             'rejectReason': rejectReason,
@@ -2102,11 +2198,13 @@ def processedsmsystemswithoutcoords(sysdb, timer, rejectout):
                     sys.stderr.write('  {0}\n'.format(i + 1))
                     sys.stderr.flush()
                     updatetitleprogress('EDSMSysNC:{0}'.format(i + 1))
+                    sysdb.saveedsmsyscache()
                 timer.time('commit')
                     
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
     sysdb.commit()
+    sysdb.saveedsmsyscache()
     timer.time('commit')
 
 def processedsmhiddensystems(sysdb, timer, rejectout):
@@ -2118,7 +2216,7 @@ def processedsmhiddensystems(sysdb, timer, rejectout):
             try:
                 msg = json.loads(line)
                 edsmsysid = msg['id']
-                sysname = msg['name']
+                sysname = msg['system']
             except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
                 sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
                 rejectmsg = {
@@ -2135,7 +2233,7 @@ def processedsmhiddensystems(sysdb, timer, rejectout):
                 timer.time('sysquery')
 
                 if sysid:
-                    sysdb.updateedsmsysid(edsmsysid, sysid, ts, False, True, False)
+                    rec = sysdb.updateedsmsysid(edsmsysid, sysid, ts, False, True, False)
                     w += 1
                     
                 if rec is not None:
@@ -2156,19 +2254,36 @@ def processedsmhiddensystems(sysdb, timer, rejectout):
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
     sysdb.commit()
+    sysdb.saveedsmsyscache()
     timer.time('commit')
 
 def processedsmdeletedsystems(sysdb, timer, rejectout):
     sys.stderr.write('Processing EDSM deleted systems\n')
+    w = 0
+    
+    #for row in sysdb.edsmsysids:
+    #    row[5] = 0
+    
+    #sysdb.saveedsmsyscache()
+    
     for i, row in enumerate(sysdb.edsmsysids):
         if row[0] != 0 and row[6] == 0 and row[5] == 0:
-            sysdb.updateedsmsysid(row[1], row[0], None, False, False, True)
+            sys.stderr.write('{0:10d}'.format(row[1]) + '\b' * 10)
+            sys.stderr.flush()
+            if sysdb.updatesystemfromedsmbyid(row[1], timer, rejectout):
+                sysdb.updateedsmsysid(row[1], row[0], row[2], False, False, True)
+
             w += 1
 
         if ((i + 1) % 1000) == 0:
             sysdb.commit()
-            sys.stderr.write('.' if w == 0 else '*')
+            sys.stderr.write('.' if w == 0 else '*' + (' ' * 10) + ('\b' * 10))
             sys.stderr.flush()
+
+            if w != 0:
+                sysdb.commit()
+                sysdb.saveedsmsyscache()
+
             w = 0
 
             if ((i + 1) % 64000) == 0:
@@ -2180,6 +2295,7 @@ def processedsmdeletedsystems(sysdb, timer, rejectout):
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
     sysdb.commit()
+    sysdb.saveedsmsyscache()
     timer.time('commit')
 
 def processeddbsystems(sysdb, timer, rejectout):
@@ -2658,7 +2774,8 @@ def main():
         'eddbupdate',
         'infoinsert',
         'factionupdate',
-        'factioninsert'
+        'factioninsert',
+        'edsmhttp'
     })
 
     sys.excepthook = unhandledexception
@@ -2687,8 +2804,8 @@ def main():
 
         if args.edsmsys:
             with open(edsmsysrejectfile, 'at') as rf:
-                processedsmsystems(sysdb, timer, rf)
-                processedsmsystemswithoutcoords(sysdb, timer, rf)
+                #processedsmsystems(sysdb, timer, rf)
+                #processedsmsystemswithoutcoords(sysdb, timer, rf)
                 processedsmhiddensystems(sysdb, timer, rf)
                 processedsmdeletedsystems(sysdb, timer, rf)
         
