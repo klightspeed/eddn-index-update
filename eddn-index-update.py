@@ -30,6 +30,7 @@ edsmbodiesdir = config.rootdir + '/EDSM/bodies'
 eddbdir = config.rootdir + '/EDDB/dumps'
 edsmsysfile = edsmdumpdir + '/systemsWithCoordinates.jsonl.bz2'
 edsmsyswithoutcoordsfile = edsmdumpdir + '/systemsWithoutCoordinates.jsonl.bz2'
+edsmsyswithoutcoordsprepurgefile = edsmdumpdir + '/systemsWithoutCoordinates-2020-09-30.jsonl.bz2'
 edsmhiddensysfile = edsmdumpdir + '/hiddenSystems.jsonl.bz2'
 edsmbodiesfile = edsmdumpdir + '/bodies.jsonl.bz2'
 edsmstationsfile = edsmdumpdir + '/stations.json.gz'
@@ -1562,37 +1563,35 @@ class EDDNSysDB(object):
                 return False
         except (OverflowError,ValueError,TypeError,json.JSONDecodeError,OSError):
             (exctype, excvalue, traceback) = sys.exc_info()
-            import pdb; pdb.post_mortem(traceback)
             sys.stderr.write('Error: {0}\n'.format(exctype))
+            import pdb; pdb.post_mortem(traceback)
             timer.time('error')
             return True
         else:
             timer.time('edsmhttp')
             sqltimestamp = timestamptosql(timestamp)
             sqlts = int((sqltimestamp - tsbasedate).total_seconds())
-            timer.time('parse')
             (sysid, ts, hascoord, rec) = self.findedsmsysid(edsmsysid)
             timer.time('sysquery')
-            if not sysid or ts != sqlts or not hascoord:
-                if starpos is not None:
-                    starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
-                    (system, rejectReason, rejectData) = self.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
-                else:
-                    (system, rejectReason, rejectData) = self.getsystem(timer, sysname, None, None, None, sysaddr)
-                    
-                timer.time('sysquery', 0)
+            if starpos is not None:
+                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                (system, rejectReason, rejectData) = self.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+            else:
+                (system, rejectReason, rejectData) = self.getsystem(timer, sysname, None, None, None, sysaddr)
+                
+            timer.time('sysquery', 0)
 
-                if system is not None:
-                    rec = self.updateedsmsysid(edsmsysid, system.id, sqltimestamp, starpos is not None, False, False)
-                else:
-                    rejectmsg = {
-                        'rejectReason': rejectReason,
-                        'rejectData': rejectData,
-                        'data': msg
-                    }
-                    rejectout.write(json.dumps(rejectmsg) + '\n')
+            if system is not None:
+                rec = self.updateedsmsysid(edsmsysid, system.id, sqltimestamp, starpos is not None, False, False)
+            else:
+                rejectmsg = {
+                    'rejectReason': rejectReason,
+                    'rejectData': rejectData,
+                    'data': msg
+                }
+                rejectout.write(json.dumps(rejectmsg) + '\n')
 
-                timer.time('edsmupdate')
+            timer.time('edsmupdate')
 
             if rec is not None:
                 rec.processed = 1
@@ -2207,6 +2206,70 @@ def processedsmsystemswithoutcoords(sysdb, timer, rejectout):
     sysdb.saveedsmsyscache()
     timer.time('commit')
 
+def processedsmsystemswithoutcoordsprepurge(sysdb, timer, rejectout):
+    sys.stderr.write('Processing pre-purge EDSM systems without coords\n')
+    with bz2.BZ2File(edsmsyswithoutcoordsprepurgefile, 'r') as f:
+        w = 0
+        for i, line in enumerate(f):
+            timer.time('read')
+            try:
+                msg = json.loads(line)
+                edsmsysid = msg['id']
+                sysaddr = msg['id64']
+                sysname = msg['name']
+                timestamp = msg['date'].replace(' ', 'T')
+            except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                rejectmsg = {
+                    'rejectReason': 'Invalid',
+                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'line': line.decode('utf-8', 'backslashreplace')
+                }
+                rejectout.write(json.dumps(rejectmsg) + '\n')
+                timer.time('error')
+                pass
+            else:
+                sqltimestamp = timestamptosql(timestamp)
+                sqlts = int((sqltimestamp - tsbasedate).total_seconds())
+                timer.time('parse')
+                (sysid, ts, hascoord, rec) = sysdb.findedsmsysid(edsmsysid)
+                timer.time('sysquery')
+                if not sysid:
+                    (system, rejectReason, rejectData) = sysdb.getsystem(timer, sysname, None, None, None, sysaddr)
+                    timer.time('sysquery', 0)
+
+                    if system is not None:
+                        rec = sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, False, False, False)
+                    else:
+                        rejectmsg = {
+                            'rejectReason': rejectReason,
+                            'rejectData': rejectData,
+                            'data': msg
+                        }
+                        rejectout.write(json.dumps(rejectmsg) + '\n')
+
+                    timer.time('edsmupdate')
+                    w += 1
+
+            if ((i + 1) % 1000) == 0:
+                sysdb.commit()
+                sys.stderr.write('.' if w == 0 else '*')
+                sys.stderr.flush()
+                w = 0
+
+                if ((i + 1) % 64000) == 0:
+                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.flush()
+                    updatetitleprogress('EDSMSysNCP:{0}'.format(i + 1))
+                    sysdb.saveedsmsyscache()
+                timer.time('commit')
+                    
+    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.flush()
+    sysdb.commit()
+    sysdb.saveedsmsyscache()
+    timer.time('commit')
+
 def processedsmhiddensystems(sysdb, timer, rejectout):
     sys.stderr.write('Processing EDSM hidden systems\n')
     with bz2.BZ2File(edsmhiddensysfile, 'r') as f:
@@ -2260,37 +2323,40 @@ def processedsmhiddensystems(sysdb, timer, rejectout):
 def processedsmdeletedsystems(sysdb, timer, rejectout):
     sys.stderr.write('Processing EDSM deleted systems\n')
     w = 0
+    w2 = 0
     
     #for row in sysdb.edsmsysids:
     #    row[5] = 0
-    
+    #
     #sysdb.saveedsmsyscache()
     
     for i, row in enumerate(sysdb.edsmsysids):
         if row[0] != 0 and row[6] == 0 and row[5] == 0:
             sys.stderr.write('{0:10d}'.format(row[1]) + '\b' * 10)
             sys.stderr.flush()
-            if sysdb.updatesystemfromedsmbyid(row[1], timer, rejectout):
-                sysdb.updateedsmsysid(row[1], row[0], row[2], False, False, True)
+            if not sysdb.updatesystemfromedsmbyid(row[1], timer, rejectout):
+                rec = sysdb.updateedsmsysid(row[1], row[0], row[2], False, False, True)
 
             w += 1
+            w2 += 1
 
         if ((i + 1) % 1000) == 0:
             sysdb.commit()
             sys.stderr.write('.' if w == 0 else '*' + (' ' * 10) + ('\b' * 10))
             sys.stderr.flush()
 
-            if w != 0:
-                sysdb.commit()
-                sysdb.saveedsmsyscache()
-
-            w = 0
-
             if ((i + 1) % 64000) == 0:
                 sys.stderr.write('  {0}\n'.format(i + 1))
                 sys.stderr.flush()
                 updatetitleprogress('EDSMSysDel:{0}'.format(i + 1))
+            
+            if w2 >= 10:
+                sysdb.saveedsmsyscache()
+                w2 = 0
+
             timer.time('commit')
+
+            w = 0
                     
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
@@ -2806,6 +2872,7 @@ def main():
             with open(edsmsysrejectfile, 'at') as rf:
                 #processedsmsystems(sysdb, timer, rf)
                 #processedsmsystemswithoutcoords(sysdb, timer, rf)
+                processedsmsystemswithoutcoordsprepurge(sysdb, timer, rf)
                 processedsmhiddensystems(sysdb, timer, rf)
                 processedsmdeletedsystems(sysdb, timer, rf)
         
