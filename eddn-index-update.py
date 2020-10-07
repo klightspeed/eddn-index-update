@@ -22,6 +22,7 @@ import csv
 import eddnindex.config as config
 import eddnindex.mysqlutils as mysql
 import urllib.request
+import urllib.error
 from setproctitle import getproctitle, setproctitle
 
 eddndir = config.rootdir + '/EDDN/data'
@@ -1561,7 +1562,13 @@ class EDDNSysDB(object):
             else:
                 timer.time('edsmhttp')
                 return False
-        except (OverflowError,ValueError,TypeError,json.JSONDecodeError,OSError):
+        except urllib.request.URLError:
+            (exctype, excvalue, traceback) = sys.exc_info()
+            sys.stderr.write('Error: {0}\n'.format(exctype))
+            import pdb; pdb.set_trace()
+            timer.time('error')
+            return True
+        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
             (exctype, excvalue, traceback) = sys.exc_info()
             sys.stderr.write('Error: {0}\n'.format(exctype))
             import pdb; pdb.post_mortem(traceback)
@@ -2324,6 +2331,8 @@ def processedsmdeletedsystems(sysdb, timer, rejectout):
     sys.stderr.write('Processing EDSM deleted systems\n')
     w = 0
     w2 = 0
+    from timeit import default_timer
+    tstart = default_timer()
     
     #for row in sysdb.edsmsysids:
     #    row[5] = 0
@@ -2344,7 +2353,7 @@ def processedsmdeletedsystems(sysdb, timer, rejectout):
             sysdb.commit()
             sys.stderr.write('.' if w == 0 else '*' + (' ' * 10) + ('\b' * 10))
             sys.stderr.flush()
-
+            
             if ((i + 1) % 64000) == 0:
                 sys.stderr.write('  {0}\n'.format(i + 1))
                 sys.stderr.flush()
@@ -2358,6 +2367,9 @@ def processedsmdeletedsystems(sysdb, timer, rejectout):
 
             w = 0
                     
+            if default_timer() - tstart > 18 * 60 * 60:
+                break
+
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
     sysdb.commit()
@@ -2870,9 +2882,9 @@ def main():
 
         if args.edsmsys:
             with open(edsmsysrejectfile, 'at') as rf:
-                #processedsmsystems(sysdb, timer, rf)
-                #processedsmsystemswithoutcoords(sysdb, timer, rf)
-                processedsmsystemswithoutcoordsprepurge(sysdb, timer, rf)
+                processedsmsystems(sysdb, timer, rf)
+                processedsmsystemswithoutcoords(sysdb, timer, rf)
+                #processedsmsystemswithoutcoordsprepurge(sysdb, timer, rf)
                 processedsmhiddensystems(sysdb, timer, rf)
                 processedsmdeletedsystems(sysdb, timer, rf)
         
