@@ -17,6 +17,7 @@ import re
 import numpy
 import numpy.core.records
 from datetime import datetime, timedelta
+import time
 import argparse
 import csv
 import eddnindex.config as config
@@ -1546,9 +1547,16 @@ class EDDNSysDB(object):
     def updatesystemfromedsmbyid(self, edsmid, timer, rejectout):
         url = 'https://www.edsm.net/api-v1/system?systemId={0}&coords=1&showId=1&submitted=1&includeHidden=1'.format(edsmid)
         try:
-            with urllib.request.urlopen(url) as f:
-                msg = json.load(f)
-                info = f.info()
+            while True:
+                try:
+                    with urllib.request.urlopen(url) as f:
+                        msg = json.load(f)
+                        info = f.info()
+                except urllib.request.URLError:
+                    time.sleep(30)
+                else:
+                    break
+
             if type(msg) is dict:
                 edsmsysid = msg['id']
                 sysaddr = msg['id64']
@@ -1562,12 +1570,6 @@ class EDDNSysDB(object):
             else:
                 timer.time('edsmhttp')
                 return False
-        except urllib.request.URLError:
-            (exctype, excvalue, traceback) = sys.exc_info()
-            sys.stderr.write('Error: {0}\n'.format(exctype))
-            import pdb; pdb.set_trace()
-            timer.time('error')
-            return True
         except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
             (exctype, excvalue, traceback) = sys.exc_info()
             sys.stderr.write('Error: {0}\n'.format(exctype))
@@ -2882,8 +2884,12 @@ def main():
 
         if args.edsmsys:
             with open(edsmsysrejectfile, 'at') as rf:
-                processedsmsystems(sysdb, timer, rf)
-                processedsmsystemswithoutcoords(sysdb, timer, rf)
+                if (not os.path.exists(edsmsyscachefile) or
+                    os.path.getmtime(edsmsysfile) > os.path.getmtime(edsmsyscachefile) - 7200 or
+                    next((x for x in sysdb.edsmsysids if x[0] != 0), None) is None or
+                    next(x for x in sysdb.edsmsysids[::-1] if x[0] != 0).processed == 0):
+                    processedsmsystems(sysdb, timer, rf)
+                    processedsmsystemswithoutcoords(sysdb, timer, rf)
                 #processedsmsystemswithoutcoordsprepurge(sysdb, timer, rf)
                 processedsmhiddensystems(sysdb, timer, rf)
                 processedsmdeletedsystems(sysdb, timer, rf)
