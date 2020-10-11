@@ -2884,12 +2884,8 @@ def main():
 
         if args.edsmsys:
             with open(edsmsysrejectfile, 'at') as rf:
-                if (not os.path.exists(edsmsyscachefile) or
-                    os.path.getmtime(edsmsysfile) > os.path.getmtime(edsmsyscachefile) - 7200 or
-                    next((x for x in sysdb.edsmsysids if x[0] != 0), None) is None or
-                    next(x for x in sysdb.edsmsysids[::-1] if x[0] != 0).processed == 0):
-                    processedsmsystems(sysdb, timer, rf)
-                    processedsmsystemswithoutcoords(sysdb, timer, rf)
+                processedsmsystems(sysdb, timer, rf)
+                processedsmsystemswithoutcoords(sysdb, timer, rf)
                 #processedsmsystemswithoutcoordsprepurge(sysdb, timer, rf)
                 processedsmhiddensystems(sysdb, timer, rf)
                 processedsmdeletedsystems(sysdb, timer, rf)
