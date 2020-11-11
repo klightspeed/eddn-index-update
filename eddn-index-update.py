@@ -564,7 +564,7 @@ class EDDNSysDB(object):
                
                 return system
 
-        syslist |= systems
+        syslist |= set(systems)
         return None
 
     def sysaddrtomodsysaddr(self, sysaddr):
