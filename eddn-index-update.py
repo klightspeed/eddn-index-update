@@ -2850,7 +2850,15 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                             msg = json.loads(line)
                             body = msg['message']
                             hdr = msg['header']
-                            sysname = body['StarSystem']
+                            eventtype = body['event'] if 'event' in body else None
+
+                            if eventtype == 'CodexEntry':
+                                sysname = body['System']
+                            elif eventtype == 'FSSDiscoveryScan':
+                                sysname = body['SystemName']
+                            else:
+                                sysname = body['StarSystem']
+
                             starpos = body['StarPos']
                             sysaddr = body['SystemAddress'] if 'SystemAddress' in body else None
                             stationname = body['StationName'] if 'StationName' in body else None
@@ -2868,7 +2876,6 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                             stnfaction = body['StationFaction'] if 'StationFaction' in body else None
                             stngovern = body['StationGovernment'] if 'StationGovernment' in body else None
                             timestamp = body['timestamp'] if 'timestamp' in body else None
-                            eventtype = body['event'] if 'event' in body else None
                             gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
                             software = hdr['softwareName'] if 'softwareName' in hdr else None
                             distfromstar = body['DistanceFromArrivalLS'] if 'DistanceFromArrivalLS' in body else None
@@ -3255,7 +3262,7 @@ def main():
             sys.stderr.flush()
             if not args.nojournal:
                 for filename, fileinfo in files.items():
-                    if fileinfo.eventtype is not None:
+                    if fileinfo.eventtype is not None and fileinfo.eventtype != 'NavRoute':
                         processeddnjournalfile(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
             if args.market:
                 for filename, fileinfo in files.items():
