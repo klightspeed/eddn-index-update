@@ -123,7 +123,7 @@ ed332date = datetime.strptime('2019-01-17 10:00:00', '%Y-%m-%d %H:%M:%S')
 
 EDDNSystem = namedtuple('EDDNSystem', ['id', 'id64', 'name', 'x', 'y', 'z', 'hascoords'])
 EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'loctype', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil', 'test'])
-EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'factionlinecount', 'populatedlinecount', 'stationlinecount', 'test'])
+EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'factionlinecount', 'navroutesystemcount', 'populatedlinecount', 'stationlinecount', 'routesystemcount', 'test'])
 EDDNRegion = namedtuple('EDDNRegion', ['id', 'name', 'x0', 'y0', 'z0', 'sizex', 'sizey', 'sizez', 'regionaddr', 'isharegion'])
 EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'bodyid', 'category', 'argofperiapsis', 'validfrom', 'validuntil', 'isrejected'])
 EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
@@ -132,8 +132,9 @@ EDSMFile = namedtuple('EDSMFile', ['id', 'name', 'date', 'linecount', 'bodylinec
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
 argparser.add_argument('--reprocess', dest='reprocess', action='store_const', const=True, default=False, help='Reprocess files with unprocessed entries')
 argparser.add_argument('--reprocess-all', dest='reprocessall', action='store_const', const=True, default=False, help='Reprocess all files')
-argparser.add_argument('--nojournal', dest='nojournal', action='store_const', const=True, default=False, help='Skip ijournal messages')
+argparser.add_argument('--nojournal', dest='nojournal', action='store_const', const=True, default=False, help='Skip EDDN Journal messages')
 argparser.add_argument('--market', dest='market', action='store_const', const=True, default=False, help='Process market/shipyard/outfitting messages')
+argparser.add_argument('--navroute', dest='navroute', action='store_const', const=True, default=False, help='Process EDDN NavRoute messages')
 argparser.add_argument('--edsmsys', dest='edsmsys', action='store_const', const=True, default=False, help='Process EDSM systems dump')
 argparser.add_argument('--edsmbodies', dest='edsmbodies', action='store_const', const=True, default=False, help='Process EDSM bodies dump')
 argparser.add_argument('--edsmmissingbodies', dest='edsmmissingbodies', action='store_const', const=True, default=False, help='Process EDSM missing bodies')
@@ -1917,6 +1918,15 @@ class EDDNSysDB(object):
             values
         )
 
+    def addfilelineroutesystems(self, linelist):
+        values = [(fileid, lineno, system.id, entrynum) for fileid, lineno, system, entrynum in linelist]
+        self.conn.cursor().executemany(
+            'INSERT INTO FileLineNavRoutes ' +
+            '(FileId, LineNo, SystemId, EntryNum) VALUES ' +
+            '(%s,     %s,     %s,       %s)',
+            values
+        )
+
     def addedsmfilelinebodies(self, linelist):
         values = [(fileid, lineno, edsmbodyid) for fileid, lineno, edsmbodyid in linelist]
         self.conn.cursor().executemany(
@@ -1962,6 +1972,16 @@ class EDDNSysDB(object):
 
         return lines
 
+    def getnavroutefilelines(self, fileid):
+        cursor = mysql.makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, EntryNum, SystemId FROM FileLineNavRoutes WHERE FileId = %s', (fileid,))
+
+        lines = {}
+        for row in cursor:
+            lines[(row[0], row[1])] = row[2]
+
+        return lines
+
     def getedsmbodyfilelines(self, fileid):
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute('SELECT MAX(LineNo) FROM EDSMFileLineBodies WHERE FileId = %s', (fileid,))
@@ -1998,6 +2018,11 @@ class EDDNSysDB(object):
         cursor.execute('SELECT FileId, COUNT(DISTINCT LineNo) FROM FileLineFactions GROUP BY FileId')
         factionlinecounts = { row[0]: row[1] for row in cursor }
 
+        sys.stderr.write('    Getting nav route line counts\n')
+        cursor = mysql.makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(*) FROM FileLineNavRoutes GROUP BY FileId')
+        navroutelinecounts = { row[0]: row[1] for row in cursor }
+
         sys.stderr.write('    Getting file info\n')
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute('''
@@ -2009,6 +2034,7 @@ class EDDNSysDB(object):
                 LineCount, 
                 PopulatedLineCount,
                 StationLineCount,
+                NavRouteSystemCount,
                 IsTest
             FROM Files f
         ''')
@@ -2023,9 +2049,11 @@ class EDDNSysDB(object):
                 stnlinecounts[row[0]] if row[0] in stnlinecounts else 0,
                 infolinecounts[row[0]] if row[0] in infolinecounts else 0,
                 factionlinecounts[row[0]] if row[0] in factionlinecounts else 0,
+                navroutelinecounts[row[0]] if row[0] in navroutelinecounts else 0,
                 row[5],
                 row[6],
-                row[7]
+                row[7],
+                row[8]
             ) for row in cursor 
         }
 
@@ -2064,11 +2092,11 @@ class EDDNSysDB(object):
             ) for row in cursor 
         }
 
-    def updatefileinfo(self, fileid, linecount, totalsize, comprsize, poplinecount, stnlinecount):
+    def updatefileinfo(self, fileid, linecount, totalsize, comprsize, poplinecount, stnlinecount, navroutesystemcount):
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute(
-            'UPDATE Files SET LineCount = %s, CompressedSize = %s, UncompressedSize = %s, PopulatedLineCount = %s, StationLineCount = %s WHERE Id = %s',
-            (linecount, comprsize, totalsize, poplinecount, stnlinecount, fileid)
+            'UPDATE Files SET LineCount = %s, CompressedSize = %s, UncompressedSize = %s, PopulatedLineCount = %s, StationLineCount = %s, NavRouteSystemCount = %s WHERE Id = %s',
+            (linecount, comprsize, totalsize, poplinecount, stnlinecount, navroutesystemcount, fileid)
         )
 
     def updateedsmfileinfo(self, fileid, linecount, totalsize, comprsize):
@@ -2852,9 +2880,11 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                             hdr = msg['header']
                             eventtype = body['event'] if 'event' in body else None
 
-                            if eventtype == 'CodexEntry':
+                            if 'StarSystem' in body:
+                                sysname = body['StarSystem']
+                            elif 'System' in body:
                                 sysname = body['System']
-                            elif eventtype == 'FSSDiscoveryScan':
+                            elif 'SystemName' in body:
                                 sysname = body['SystemName']
                             else:
                                 sysname = body['StarSystem']
@@ -3083,7 +3113,157 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
 
                 sys.stderr.write('  {0}\n'.format(linecount))
                 sys.stderr.flush()
-                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, poplinecount, stnlinecount)
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, poplinecount, stnlinecount, 0)
+
+def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejectout):
+    #if fileinfo.eventtype in ('Location'):
+    #    continue
+    if (fileinfo.linecount is None 
+        or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
+        or (reprocess == True and fileinfo.routesystemcount != fileinfo.navroutesystemcount)):
+        fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
+        if os.path.exists(fn):
+            sys.stderr.write('{0}\n'.format(fn))
+            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.eventtype))
+            statinfo = os.stat(fn)
+            comprsize = statinfo.st_size
+            with bz2.BZ2File(fn, 'r') as f:
+                infolines = sysdb.getinfofilelines(fileinfo.id)
+                navroutelines = sysdb.getnavroutefilelines(fileinfo.id)
+                linecount = 0
+                routesystemcount = 0
+                totalsize = 0
+                timer.time('load')
+                infotoinsert = []
+                routesystemstoinsert = []
+                for lineno, line in enumerate(f):
+                    timer.time('read')
+                    msg = None
+                    try:
+                        msg = json.loads(line)
+                        body = msg['message']
+                        hdr = msg['header']
+                        timestamp = body['timestamp'] if 'timestamp' in body else None
+                        route = list(body['Route'])
+                        gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
+                        software = hdr['softwareName'] if 'softwareName' in hdr else None
+                    except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                        sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
+                        msg = {
+                            'rejectReason': 'Invalid',
+                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'rawmessage': line.decode('utf-8')
+                        }
+                        rejectout.write(json.dumps(msg) + '\n')
+                        timer.time('error')
+                        pass
+                    else:
+                        sqltimestamp = timestamptosql(timestamp)
+                        sqlgwtimestamp = timestamptosql(gwtimestamp)
+                        timer.time('parse')
+                        reject = False
+                        rejectReason = None
+                        rejectData = None
+                        linelen = len(line)
+                        lineroutes = []
+
+                        for n, system in enumerate(route):
+                            try:
+                                sysname = system['StarSystem']
+                                starpos = system['StarPos']
+                                sysaddr = system['SystemAddress']
+                            except ValueError:
+                                lineroutes += [(None, n + 1, "Missing property", system)]
+                            else:
+                                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                                (system, sysRejectReason, sysRejectData) = sysdb.getsystem(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                                timer.time('sysquery')
+                                lineroutes += [(system, n + 1, sysRejectReason, sysRejectData)]
+                            
+                        if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
+                            if len(lineroutes) < 2:
+                                reject = True
+                                rejectReason = 'Route too short'
+                                rejectData = route
+                            elif len([system for system, _, _, _ in lineroutes if system is None]) != 0:
+                                sysRejects = [(system, rejectReason, rejectData, n) for system, n, rejectReason, rejectData in lineroutes if system is None]
+                                reject = True
+                                rejectReason = 'One or more systems failed validation'
+                                rejectData = [{
+                                    'entrynum': n,
+                                    'rejectReason': rejectReason,
+                                    'rejectData': rejectData
+                                } for _, rejectReason, rejectData, n in sysRejects]
+
+                            if reject:
+                                msg['rejectReason'] = rejectReason
+                                msg['rejectData'] = rejectData
+                                rejectout.write(json.dumps(msg) + '\n')
+                            else:
+                                for system, n, _, _ in lineroutes:
+                                    if (lineno + 1, n) not in navroutelines:
+                                        routesystemstoinsert += [(fileinfo.id, lineno + 1, system, n)]
+                                
+                                if (lineno + 1) not in infolines:
+                                    sysdb.insertsoftware(software)
+                                    system, _, _, _ = lineroutes[0]
+                                    infotoinsert += [(
+                                        fileinfo.id,
+                                        lineno + 1,
+                                        sqltimestamp,
+                                        sqlgwtimestamp,
+                                        sysdb.software[software],
+                                        system.id,
+                                        None,
+                                        linelen,
+                                        None,
+                                        0,
+                                        1,
+                                        0
+                                    )]
+
+                        else:
+                            msg['rejectReason'] = 'Timestamp error'
+                            rejectout.write(json.dumps(msg) + '\n')
+                        
+                        routesystemcount += len(lineroutes)
+                                
+                    linecount += 1
+                    totalsize += len(line)
+
+                    if (linecount % 1000) == 0:
+                        sysdb.commit()
+                        if len(infotoinsert) != 0:
+                            sysdb.addfilelineinfo(infotoinsert)
+                            timer.time('infoinsert', len(infotoinsert))
+                            infotoinsert = []
+                        if len(routesystemstoinsert) != 0:
+                            sysdb.addfilelineroutesystems(routesystemstoinsert)
+                            timer.time('routesysteminsert', len(routesystemstoinsert))
+                            routesystemstoinsert = []
+                        sysdb.commit()
+                        sys.stderr.write('.')
+                        sys.stderr.flush()
+
+                        if (linecount % 64000) == 0:
+                            sys.stderr.write('  {0}\n'.format(lineno + 1))
+                            sys.stderr.flush()
+                
+                sysdb.commit()
+                if len(infotoinsert) != 0:
+                    sysdb.addfilelineinfo(infotoinsert)
+                    timer.time('infoinsert', len(infotoinsert))
+                    infotoinsert = []
+                if len(routesystemstoinsert) != 0:
+                    sysdb.addfilelineroutesystems(routesystemstoinsert)
+                    timer.time('routesysteminsert', len(routesystemstoinsert))
+                    routesystemstoinsert = []
+
+                sysdb.commit()
+
+                sys.stderr.write('  {0}\n'.format(linecount))
+                sys.stderr.flush()
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, 0, routesystemcount)
 
 def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None 
@@ -3197,7 +3377,7 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
                     infotoinsert = []
                 sysdb.commit()
                 sys.stderr.write('\n')
-                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0)
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, linecount, 0)
         sysdb.commit()
         timer.time('commit')
 
@@ -3242,6 +3422,7 @@ def main():
         'infoinsert',
         'factionupdate',
         'factioninsert',
+        'routesysteminsert',
         'edsmhttp'
     })
 
@@ -3264,6 +3445,10 @@ def main():
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype != 'NavRoute':
                         processeddnjournalfile(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
+            if args.navroute:
+                for filename, fileinfo in files.items():
+                    if fileinfo.eventtype is not None and fileinfo.eventtype == 'NavRoute':
+                        processeddnjournalroute(sysdb, timer, filename, fileinfo, args.reprocess, rf)
             if args.market:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is None:
