@@ -152,7 +152,8 @@ EDSMStationTypes = {
     'Orbis Starport': 'Orbis',
     'Outpost': 'Outpost',
     'Planetary Outpost': 'CraterOutpost',
-    'Planetary Port': 'CraterPort'
+    'Planetary Port': 'CraterPort',
+    'Odyssey Settlement': 'OnFootSettlement',
 }
 
 proctitleprogresspos = None
@@ -1024,6 +1025,9 @@ class EDDNSysDB(object):
             stationtype = None
         
         if bodyname is not None and bodyname == '':
+            bodyname = None
+
+        if stationtype not in ['SurfaceStation', 'CraterOutpost', 'CraterPort', 'OnFootSettlement'] or bodyid is None:
             bodyname = None
 
         if bodytype is not None and bodytype == '':
