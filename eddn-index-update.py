@@ -115,11 +115,14 @@ timestampre = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-
 carriernamere = re.compile('^[A-Z0-9]{3}-[A-Z0-9]{3}$')
 
 tsbasedate = datetime.strptime('2014-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+megashipweek0 = datetime.strptime('2016-10-20 07:00:00', '%Y-%m-%d %H:%M:%S')
 ed300date = datetime.strptime('2018-02-27 15:00:00', '%Y-%m-%d %H:%M:%S')
 ed303date = datetime.strptime('2018-03-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 ed304date = datetime.strptime('2018-03-27 16:00:00', '%Y-%m-%d %H:%M:%S')
 ed330date = datetime.strptime('2018-12-11 16:00:00', '%Y-%m-%d %H:%M:%S')
 ed332date = datetime.strptime('2019-01-17 10:00:00', '%Y-%m-%d %H:%M:%S')
+ed370date = datetime.strptime('2020-06-09 10:00:00', '%Y-%m-%d %H:%M:%S')
+ed400date = datetime.strptime('2021-05-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 
 EDDNSystem = namedtuple('EDDNSystem', ['id', 'id64', 'name', 'x', 'y', 'z', 'hascoords'])
 EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'loctype', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil', 'test'])
@@ -1115,14 +1118,28 @@ class EDDNSysDB(object):
             tcandidates = [ c for c in candidates if not c[0].test ]
             if len(tcandidates) == 1:
                 candidates = tcandidates
+        
+        if stationtype == 'Megaship':
+            candidates = [ c for c in candidates if c[0].validfrom <= timestamp and c[0].validuntil > timestamp ]
 
         if len(candidates) > 1:
-            candidates = [ c for c in candidates if not c[0].isrejected and c[0].validfrom <= timestamp and c[0].validuntil >= timestamp ]
+            candidates = [ c for c in candidates if not c[0].isrejected and c[0].validfrom <= timestamp and c[0].validuntil > timestamp ]
 
-        if len(candidates) == 2 and candidates[0][0].validfrom > candidates[1][0].validfrom and candidates[0][0].validuntil < candidates[1][0].validuntil:
-            candidates = [ candidates[0] ]
-        elif len(candidates) == 2 and candidates[1][0].validfrom > candidates[0][0].validfrom and candidates[1][0].validuntil < candidates[0][0].validuntil:
-            candidates = [ candidates[1] ]
+        if len(candidates) == 2:
+            if candidates[0][0].validfrom > candidates[1][0].validfrom and candidates[0][0].validuntil < candidates[1][0].validuntil:
+                candidates = [ candidates[0] ]
+            elif candidates[1][0].validfrom > candidates[0][0].validfrom and candidates[1][0].validuntil < candidates[0][0].validuntil:
+                candidates = [ candidates[1] ]
+            elif candidates[0][0].validuntil == candidates[1][0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[0][0].validuntil - timedelta(hours = 13):
+                    candidates = [ candidates[0] ]
+                else:
+                    candidates = [ candidates[1] ]
+            elif candidates[1][0].validuntil == candidates[0][0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[1][0].validuntil - timedelta(hours = 13):
+                    candidates = [ candidates[1] ]
+                else:
+                    candidates = [ candidates[0] ]
 
         if len(candidates) == 1:
             station, replace = candidates[0]
@@ -1164,6 +1181,10 @@ class EDDNSysDB(object):
         if stationtype is not None:
             if stationtype == 'SurfaceStation':
                 validuntil = ed330date
+            elif (marketid is not None and marketid >= 3789600000) or stationtype == 'OnFootSettlement':
+                validfrom = ed400date
+            elif (marketid is not None and marketid >= 3700000000) or stationtype == 'FleetCarrier':
+                validfrom = ed370date
             elif stationtype in ['CraterPort', 'CraterOutpost']:
                 validfrom = ed330date
             elif stationtype == 'Ocellus':
@@ -1171,6 +1192,9 @@ class EDDNSysDB(object):
                 stationtype_location = 'Bernal'
             elif stationtype == 'Bernal' and timestamp < ed332date:
                 validuntil = ed332date
+            elif stationtype == 'Megaship' and marketid is not None and marketid >= 3400000000:
+                validfrom = megashipweek0 + timedelta(weeks = math.floor((timestamp - megashipweek0).total_seconds() / 86400 / 7), hours = -2)
+                validuntil = validfrom + timedelta(days = 7, hours = 15)
 
         if (sysid is None and sysname != '') or stationtype is None or marketid is None:
             return (
