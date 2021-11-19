@@ -2,6 +2,7 @@ from timeit import default_timer as timer
 import sys
 from typing import Dict
 
+
 class Timer(object):
     tstart: float
     timers: Dict[str, float]
@@ -27,4 +28,8 @@ class Timer(object):
         sys.stderr.write('\nTimes taken:\n')
         for name, time in sorted(self.timers.items()):
             count = self.counts[name]
-            sys.stderr.write('  {0}: {1}s / {2} ({3}ms/iteration)\n'.format(name, time, count, time * 1000 / (count or 1)))
+            sys.stderr.write(
+                '  {0}: {1}s / {2} ({3}ms/iteration)\n'.format(
+                    name, time, count, time * 1000 / (count or 1)
+                )
+            )

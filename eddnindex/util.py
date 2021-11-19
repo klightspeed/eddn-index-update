@@ -1,6 +1,7 @@
 from typing import Union
 from datetime import datetime
 
+
 def timestamptosql(timestamp: Union[str, None]):
     if timestamp is None:
         return None
@@ -11,4 +12,3 @@ def timestamptosql(timestamp: Union[str, None]):
             return datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%f')
         else:
             return datetime.strptime(timestamp[:19], '%Y-%m-%dT%H:%M:%S')
-

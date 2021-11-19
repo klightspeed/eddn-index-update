@@ -2,6 +2,7 @@ from functools import lru_cache
 import os.path
 import json
 
+
 class EDDNRejectData(object):
     def __init__(self, rejectdir):
         self.rejectdir = rejectdir
@@ -35,4 +36,3 @@ class EDDNRejectData(object):
         outfile = self.open(rejectfile)
         outfile.write(jsonstr)
         outfile.flush()
-

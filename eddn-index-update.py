@@ -5,7 +5,7 @@ import argparse
 from eddnindex.config import Config
 from eddnindex.timer import Timer
 import eddnindex.process as process
-from eddnindex.proctitleprogress import updatetitleprogress
+from eddnindex.proctitleprogress import update_title_progress
 
 def unhandledexception(type, value, traceback):
     sys.__excepthook__(type, value, traceback)
@@ -39,7 +39,7 @@ def main():
 
     sys.excepthook = unhandledexception
 
-    titleprogress = updatetitleprogress if args.proctitleprogress else dummytitleprogress
+    titleprogress = update_title_progress if args.proctitleprogress else dummytitleprogress
 
     timer = Timer()
 

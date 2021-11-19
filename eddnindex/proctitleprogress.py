@@ -1,15 +1,16 @@
 from setproctitle import getproctitle, setproctitle
 
-proctitleprogresspos = None
+process_title_progress_pos = None
 
-def updatetitleprogress(progress):
-    global proctitleprogresspos
+
+def update_title_progress(progress):
+    global process_title_progress_pos
 
     title = getproctitle()
 
-    if proctitleprogresspos is None:
-        proctitleprogresspos = title.find('--processtitleprogress')
+    if process_title_progress_pos is None:
+        process_title_progress_pos = title.find('--processtitleprogress')
 
-    if proctitleprogresspos > 0:
-        title = title[0:proctitleprogresspos] + '[{0:20.20s}]'.format(progress) + title[proctitleprogresspos + 22:]
+    if process_title_progress_pos > 0:
+        title = title[0:process_title_progress_pos] + '[{0:20.20s}]'.format(progress) + title[process_title_progress_pos + 22:]
         setproctitle(title)
