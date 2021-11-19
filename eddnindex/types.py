@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import NamedTuple, TypedDict, Protocol
+from typing import NamedTuple, TypedDict, Protocol, Any
 import numpy
 import numpy.typing
 
@@ -106,6 +106,25 @@ class ProcessorArgs(Protocol):
     eddbstations: bool
     noeddn: bool
 
-NumpyEDSMSystem = numpy.dtype([('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
-NumpyEDDBSystem = numpy.dtype([('sysid', '<i4'), ('eddbid', '<i4'), ('timestampseconds', '<i4')])
-NumpyEDSMBody = numpy.dtype([('bodyid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
+DTypeEDSMSystem = numpy.dtype([('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
+DTypeEDDBSystem = numpy.dtype([('sysid', '<i4'), ('eddbid', '<i4'), ('timestampseconds', '<i4')])
+DTypeEDSMBody = numpy.dtype([('bodyid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
+
+class NPTypeEDSMSystem(Protocol):
+    sysid: numpy.intc
+    edsmid: numpy.intc
+    timestampseconds: numpy.intc
+    hascoords: numpy.byte
+    ishidden: numpy.byte
+    isdeleted: numpy.byte
+    processed: numpy.byte
+
+class NPTypeEDDBSystem(Protocol):
+    sysid: numpy.intc
+    eddbid: numpy.intc
+    timestampseconds: numpy.intc
+
+class NPTypeEDSMBody(Protocol):
+    bodyid: numpy.intc
+    edsmid: numpy.intc
+    timestampseconds: numpy.intc

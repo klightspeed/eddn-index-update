@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import time
 import urllib.request
 import urllib.error
-from typing import Set, Tuple, List, Dict, Union, Any
+from typing import MutableSequence, Set, Tuple, List, Dict, Union, Any
 
 import numpy
 import numpy.typing
@@ -16,7 +16,7 @@ import numpy.core.records
 
 from . import edtslookup
 from . import mysqlutils as mysql
-from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, EDSMFile, EDDNRegion, EDDNStation, EDSMBody, NumpyEDSMSystem, NumpyEDDBSystem, NumpyEDSMBody
+from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, EDSMFile, EDDNRegion, EDDNStation, EDSMBody, DTypeEDSMSystem, DTypeEDDBSystem, DTypeEDSMBody, NPTypeEDSMSystem, NPTypeEDDBSystem, NPTypeEDSMBody
 from .timer import Timer
 from . import constants
 from .util import timestamptosql
@@ -32,9 +32,9 @@ class EDDNSysDB(object):
     bodydesigs: Dict[str, int]
     software: Dict[str, int]
     factions: Dict[str, EDDNFaction]
-    edsmsysids: Union[numpy.ndarray[Any, NumpyEDSMSystem], None]
-    edsmbodyids: Union[numpy.ndarray[Any, NumpyEDSMBody], None]
-    eddbsysids: Union[numpy.ndarray[Any, NumpyEDDBSystem], None]
+    edsmsysids: Union[MutableSequence[NPTypeEDSMSystem], None]
+    edsmbodyids: Union[MutableSequence[NPTypeEDDBSystem], None]
+    eddbsysids: Union[MutableSequence[NPTypeEDSMBody], None]
     edsmsyscachefile: str
     knownbodiessheeturi: str
     edsmbodycachefile: str
@@ -92,7 +92,7 @@ class EDDNSysDB(object):
             sys.stderr.write('Loading EDSM System IDs\n')
             if os.path.exists(self.edsmsyscachefile):
                 with open(self.edsmsyscachefile, 'rb') as f:
-                    edsmsysarray = numpy.fromfile(f, dtype=NumpyEDSMSystem)
+                    edsmsysarray = numpy.fromfile(f, dtype=DTypeEDSMSystem)
 
                 if len(edsmsysarray) > maxedsmsysid:
                     if len(edsmsysarray) < maxedsmsysid + 524288:
@@ -105,7 +105,7 @@ class EDDNSysDB(object):
                 c = mysql.makestreamingcursor(conn)
                 c.execute('SELECT Id, EdsmId, TimestampSeconds, HasCoords, IsHidden, IsDeleted FROM Systems_EDSM')
 
-                edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=NumpyEDSMSystem)
+                edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=DTypeEDSMSystem)
                 self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
                 timer.time('sql')
 
@@ -152,7 +152,7 @@ class EDDNSysDB(object):
             c = mysql.makestreamingcursor(conn)
             c.execute('SELECT Id, EddbId, TimestampSeconds FROM Systems_EDDB')
 
-            eddbsysarray = numpy.zeros(maxeddbsysid + 1048576, dtype=NumpyEDDBSystem)
+            eddbsysarray = numpy.zeros(maxeddbsysid + 1048576, dtype=DTypeEDDBSystem)
             self.eddbsysids = eddbsysarray.view(numpy.core.records.recarray)
             timer.time('sql')
 
@@ -191,7 +191,7 @@ class EDDNSysDB(object):
             sys.stderr.write('Loading EDSM Body IDs\n')
             if os.path.exists(self.edsmbodycachefile):
                 with open(self.edsmbodycachefile, 'rb') as f:
-                    edsmbodyarray = numpy.fromfile(f, dtype=NumpyEDSMBody)
+                    edsmbodyarray = numpy.fromfile(f, dtype=DTypeEDSMBody)
 
                 if len(edsmbodyarray) > maxedsmbodyid:
                     if len(edsmbodyarray) < maxedsmbodyid + 524288:
@@ -204,7 +204,7 @@ class EDDNSysDB(object):
                 c = mysql.makestreamingcursor(conn)
                 c.execute('SELECT Id, EdsmId, TimestampSeconds FROM SystemBodies_EDSM')
 
-                edsmbodyarray = numpy.zeros(maxedsmbodyid + 1048576, dtype=NumpyEDSMBody)
+                edsmbodyarray = numpy.zeros(maxedsmbodyid + 1048576, dtype=DTypeEDSMBody)
                 self.edsmbodyids = edsmbodyarray.view(numpy.core.records.recarray)
                 timer.time('sql')
 
