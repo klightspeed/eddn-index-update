@@ -14,9 +14,6 @@ import numpy
 import numpy.core.records
 
 from . import edtslookup
-import edts.edtslib.system as edtslib_system
-import edts.edtslib.id64data as edtslib_id64data
-
 from . import mysqlutils as mysql
 from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, EDSMFile, EDDNRegion, EDDNStation, EDSMBody
 from .timer import Timer

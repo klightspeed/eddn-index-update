@@ -31,11 +31,11 @@ def main():
     argparser.add_argument('--eddbstations', dest='eddbstations', action='store_const', const=True, default=False, help='Process EDDB stations dump')
     argparser.add_argument('--noeddn', dest='noeddn', action='store_const', const=True, default=False, help='Skip EDDN processing')
     argparser.add_argument('--processtitleprogress', dest='proctitleprogress', action='store_const', const=True, default=False, help='Update process title with progress')
-    argparser.add_argument('--configfile', dest='configfile', default='eddn-index-update.ini', help='Configuration file')
+    argparser.add_argument('--configfile', dest='configfile', default=None, help='Configuration file')
 
     args = argparser.parse_args()
 
-    config = Config(args.configfile)
+    config = Config('eddn-index-update.ini', args.configfile)
 
     sys.excepthook = unhandledexception
 
