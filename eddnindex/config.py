@@ -63,10 +63,10 @@ class Config(object):
         self.database = DatabaseConfig(config["Database"])
 
         paths = config['Paths']
-        edsm = config['EDSM']
-        eddb = config['EDDB']
-        cache = config['Cache']
-        rejects = config['Rejects']
+        edsm = config['Paths/EDSM']
+        eddb = config['Paths/EDDB']
+        cache = config['Paths/Cache']
+        rejects = config['Paths/Rejects']
         urls = config['URLs']
         options = config['Options']
 
