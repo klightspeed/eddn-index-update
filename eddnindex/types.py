@@ -1,5 +1,7 @@
 from datetime import datetime
 from typing import NamedTuple, TypedDict, Protocol
+import numpy
+import numpy.typing
 
 class EDDNSystem(NamedTuple):
     id: int
@@ -103,3 +105,7 @@ class ProcessorArgs(Protocol):
     eddbsys: bool
     eddbstations: bool
     noeddn: bool
+
+NumpyEDSMSystem = numpy.dtype([('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
+NumpyEDDBSystem = numpy.dtype([('sysid', '<i4'), ('eddbid', '<i4'), ('timestampseconds', '<i4')])
+NumpyEDSMBody = numpy.dtype([('bodyid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
