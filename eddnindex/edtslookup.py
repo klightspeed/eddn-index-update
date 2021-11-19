@@ -1,15 +1,23 @@
-import edts.edtslib.system as edtslib_system
-import edts.edtslib.id64data as edtslib_id64data
 from typing import Tuple, Union
+
+try:
+    from edts.edtslib.system import from_name
+    from edts.edtslib.id64data import get_id64
+except ImportError:
+    def from_name(sysname: str, allow_known: bool, allow_id64data: bool):
+        return None
+    
+    def get_id64(sysname: str, starpos: Tuple[float, float, float]):
+        return None
 
 def find_edts_system_id64(sysname: str, sysaddr: int, starpos: Tuple[float, float, float]) -> Union[int, None]:
     edtsid64 = None
-    edtssys = edtslib_system.from_name(sysname, allow_known = False, allow_id64data = False)
+    edtssys = from_name(sysname, allow_known = False, allow_id64data = False)
 
     if edtssys is not None:
         edtsid64 = edtssys.id64
     else:
-        edtsid64 = edtslib_id64data.get_id64(sysname, starpos)
+        edtsid64 = get_id64(sysname, starpos)
 
     if sysaddr is None and edtsid64 is not None:
         return edtsid64
