@@ -86,7 +86,7 @@ class EDDNSysDB(object):
             timer.printstats()
 
     def loadedsmsystems(self, conn: DBConnection, timer: Timer):
-        maxedsmsysid = sqlqueries.get_max_edsm_systemid(conn)
+        maxedsmsysid = sqlqueries.get_max_edsm_system_id(conn)
 
         timer.time('sql')
 
@@ -141,7 +141,7 @@ class EDDNSysDB(object):
                 os.rename(self.edsmsyscachefile + '.tmp', self.edsmsyscachefile)
 
     def loadeddbsystems(self, conn: DBConnection, timer: Timer):
-        maxeddbsysid = sqlqueries.get_max_eddb_systemid(conn)
+        maxeddbsysid = sqlqueries.get_max_eddb_system_id(conn)
 
         timer.time('sql')
 
@@ -177,7 +177,7 @@ class EDDNSysDB(object):
             sys.stderr.write('  {0} / {1}\n'.format(i, maxeddbsysid))
 
     def loadedsmbodies(self, conn: DBConnection, timer: Timer):
-        maxedsmbodyid = sqlqueries.get_max_edsm_bodyid(conn)
+        maxedsmbodyid = sqlqueries.get_max_edsm_body_id(conn)
 
         timer.time('sql')
 
@@ -226,7 +226,7 @@ class EDDNSysDB(object):
 
     def loadparentsets(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Parent Sets\n')
-        rows = sqlqueries.get_parentsets(conn)
+        rows = sqlqueries.get_parent_sets(conn)
         timer.time('sqlparents', len(rows))
         for row in rows:
             self.parentsets[(int(row[1]), row[2])] = int(row[0])
@@ -778,7 +778,7 @@ class EDDNSysDB(object):
                 )
                 sysid = cursor.lastrowid
                 if region_info.isharegion:
-                    sqlqueries.insert_hasystem(
+                    sqlqueries.insert_sphere_sector_system(
                         self.conn,
                         (sysid, modsysaddr, region_info.id, mid1a, mid1b, mid2, sz, mid3, seq)
                     )
@@ -1168,19 +1168,19 @@ class EDDNSysDB(object):
             parentjson = json.dumps(parents)
 
             if (bodyid, parentjson) not in self.parentsets:
-                rowid = sqlqueries.insert_parentset(self.conn, (bodyid, parentjson))
+                rowid = sqlqueries.insert_parent_set(self.conn, (bodyid, parentjson))
                 self.parentsets[(bodyid, parentjson)] = rowid
 
             parentsetid = self.parentsets[(bodyid, parentjson)]
 
-            sqlqueries.insert_parentset_link(self.conn, (scanbodyid, parentsetid))
+            sqlqueries.insert_parent_set_link(self.conn, (scanbodyid, parentsetid))
 
     def insertsoftware(self, softwarename: str):
         if softwarename not in self.software:
             self.software[softwarename] = sqlqueries.insert_software(self.conn, (softwarename,))
 
     def insertedsmfile(self, filename: str):
-        return sqlqueries.insert_edsmfile(self.conn, (filename,))
+        return sqlqueries.insert_edsm_file(self.conn, (filename,))
 
     def getbody(self, timer: Timer, name: str, sysname: str, bodyid: int, system, body, timestamp):
         if system.id in self.namedbodies and name in self.namedbodies[system.id]:
@@ -1376,8 +1376,8 @@ class EDDNSysDB(object):
             timer.time('bodyquerypgre')
 
         timer.time('bodyquery', 0)
-        rows = sqlqueries.get_bodies_byname(self.conn, (system.id, name, 1))
-        rows += sqlqueries.get_bodies_byname(self.conn, (system.id, name, 0))
+        rows = sqlqueries.get_bodies_by_name(self.conn, (system.id, name, 1))
+        rows += sqlqueries.get_bodies_by_name(self.conn, (system.id, name, 0))
         timer.time('bodyselectname')
         ufrows = rows
 
@@ -1511,7 +1511,7 @@ class EDDNSysDB(object):
                 )
 
             if (not ispgname and constants.procgen_sysname_re.match(name)) or desigid is None:
-                allrows = sqlqueries.get_bodies_bycustomname(self.conn, (name,))
+                allrows = sqlqueries.get_bodies_by_custom_name(self.conn, (name,))
                 pgsysbodymatch = constants.procgen_sys_body_name_re.match(name)
                 dupsystems = []
 
@@ -1801,7 +1801,7 @@ class EDDNSysDB(object):
             if row[0] != 0:
                 return (int(row[0]), int(row[2]), bool(row[3]), row)
 
-        row = sqlqueries.get_system_by_edsmid(self.conn, (edsmid,))
+        row = sqlqueries.get_system_by_edsm_id(self.conn, (edsmid,))
 
         if row:
             return (int(row[0]), int(row[1]), bool(row[2] == b'\x01'), None)
@@ -1816,7 +1816,7 @@ class EDDNSysDB(object):
             if row[0] != 0:
                 return (int(row[0]), int(row[2]), row)
 
-        row = sqlqueries.get_body_by_edsmid
+        row = sqlqueries.get_body_by_edsm_id
 
         if row:
             return (int(row[0]), int(row[1]), None)
@@ -1844,7 +1844,7 @@ class EDDNSysDB(object):
         if type(ts) is datetime:
             ts = int((ts - constants.timestamp_base_date).total_seconds())
 
-        sqlqueries.insert_edsm_system(
+        sqlqueries.upsert_edsm_system(
             self.conn,
             (
                 edsmid,
@@ -1875,7 +1875,7 @@ class EDDNSysDB(object):
 
     def updateedsmbodyid(self, bodyid: int, edsmid: int, ts: datetime):
         ts = int((ts - constants.timestamp_base_date).total_seconds())
-        sqlqueries.insert_edsm_body(self.conn, (edsmid, bodyid, ts, bodyid, ts))
+        sqlqueries.upsert_edsm_body(self.conn, (edsmid, bodyid, ts, bodyid, ts))
 
         if edsmid < len(self.edsmbodyids):
             rec = self.edsmbodyids[edsmid]
@@ -1887,7 +1887,7 @@ class EDDNSysDB(object):
             return None
 
     def updateedsmstationid(self, edsmid: int, stationid: int, ts: datetime):
-        sqlqueries.insert_edsm_station(self.conn, (edsmid, stationid, ts, stationid, ts))
+        sqlqueries.upsert_edsm_station(self.conn, (edsmid, stationid, ts, stationid, ts))
 
     def findeddbsysid(self, eddbid: int):
         if self.eddbsysids is not None and len(self.eddbsysids) > eddbid:
@@ -1896,7 +1896,7 @@ class EDDNSysDB(object):
             if row[0] != 0:
                 return (row[0], row[2])
 
-        row = sqlqueries.get_system_by_eddbid(self.conn, (eddbid,))
+        row = sqlqueries.get_system_by_eddb_id(self.conn, (eddbid,))
 
         if row:
             return (row[0], row[1])
@@ -1904,7 +1904,7 @@ class EDDNSysDB(object):
             return (None, None)
 
     def updateeddbsysid(self, eddbid: int, sysid: int, ts: int):
-        sqlqueries.insert_eddb_system(self.conn, (eddbid, sysid, ts, sysid, ts))
+        sqlqueries.upsert_eddb_system(self.conn, (eddbid, sysid, ts, sysid, ts))
 
     def addfilelinestations(self, linelist: List[Tuple[int, int, EDDNStation]]):
         values = [(fileid, lineno, station.id) for fileid, lineno, station in linelist]
