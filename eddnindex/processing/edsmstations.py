@@ -7,7 +7,7 @@ from ..config import Config
 from ..types import Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
-from ..util import timestamptosql
+from ..util import timestamp_to_datetime
 from ..timer import Timer
 
 
@@ -43,7 +43,7 @@ def process(sysdb: EDDNSysDB,
                 timer.time('error')
                 pass
             else:
-                sqltimestamp = timestamptosql(timestamp)
+                sqltimestamp = timestamp_to_datetime(timestamp)
                 sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
                 timer.time('parse')
                 (sysid, ts, hascoord, rec) = sysdb.findedsmsysid(edsmsysid)

@@ -9,7 +9,7 @@ from ..config import Config
 from ..types import EDSMFile, Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
-from ..util import timestamptosql
+from ..util import timestamp_to_datetime
 from ..timer import Timer
 
 
@@ -35,14 +35,14 @@ def process(sysdb: EDDNSysDB,
         statinfo = os.stat(fn)
         comprsize = statinfo.st_size
 
-        if ((fileinfo.date is None and comprsize != fileinfo.comprsize)
-                or fileinfo.linecount is None
-                or (reprocess is True and fileinfo.linecount != fileinfo.bodylinecount)):
+        if ((fileinfo.date is None and comprsize != fileinfo.compressed_size)
+                or fileinfo.line_count is None
+                or (reprocess is True and fileinfo.line_count != fileinfo.body_line_count)):
 
             sys.stderr.write('Processing EDSM bodies file {0} ({1} / {2})\n'.format(
                 filename,
-                fileinfo.bodylinecount,
-                fileinfo.linecount
+                fileinfo.body_line_count,
+                fileinfo.line_count
             ))
 
             with bz2.BZ2File(fn, 'r') as f:
@@ -81,7 +81,7 @@ def process(sysdb: EDDNSysDB,
                             timer.time('error')
                             pass
                         else:
-                            sqltimestamp = timestamptosql(timestamp)
+                            sqltimestamp = timestamp_to_datetime(timestamp)
                             sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
                             timer.time('parse')
                             reject = True

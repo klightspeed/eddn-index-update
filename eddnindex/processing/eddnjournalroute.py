@@ -10,7 +10,7 @@ from typing import Callable
 from ..config import Config
 from ..types import EDDNFile, Writable
 from ..eddnsysdb import EDDNSysDB
-from ..util import timestamptosql
+from ..util import timestamp_to_datetime
 from ..timer import Timer
 
 
@@ -25,13 +25,13 @@ def process(sysdb: EDDNSysDB,
             ):
     # if fileinfo.eventtype in ('Location'):
     #     continue
-    if (fileinfo.linecount is None
-            or (reprocess is True and fileinfo.linecount != fileinfo.infolinecount)
-            or (reprocess is True and fileinfo.routesystemcount != fileinfo.navroutesystemcount)):
+    if (fileinfo.line_count is None
+            or (reprocess is True and fileinfo.line_count != fileinfo.info_file_line_count)
+            or (reprocess is True and fileinfo.route_system_count != fileinfo.nav_route_system_count)):
         fn = os.path.join(config.eddn_dir, fileinfo.date.isoformat()[:7], filename)
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
-            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.eventtype))
+            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.event_type))
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -65,8 +65,8 @@ def process(sysdb: EDDNSysDB,
                         timer.time('error')
                         pass
                     else:
-                        sqltimestamp = timestamptosql(timestamp)
-                        sqlgwtimestamp = timestamptosql(gwtimestamp)
+                        sqltimestamp = timestamp_to_datetime(timestamp)
+                        sqlgwtimestamp = timestamp_to_datetime(gwtimestamp)
                         timer.time('parse')
                         reject = False
                         reject_reason = None

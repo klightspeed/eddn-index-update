@@ -11,7 +11,7 @@ from ..config import Config
 from ..types import EDDNFile, Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
-from ..util import timestamptosql
+from ..util import timestamp_to_datetime
 from ..timer import Timer
 
 
@@ -27,20 +27,20 @@ def process(sysdb: EDDNSysDB,
             ):
     # if fileinfo.eventtype in ('Location'):
     #     continue
-    if (fileinfo.linecount is None
-            or fileinfo.populatedlinecount is None
-            or (fileinfo.stationlinecount is None and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump'))
-            or (reprocessall is True and fileinfo.eventtype == 'Scan'
+    if (fileinfo.line_count is None
+            or fileinfo.populated_line_count is None
+            or (fileinfo.station_line_count is None and fileinfo.event_type in ('Docked', 'Location', 'CarrierJump'))
+            or (reprocessall is True and fileinfo.event_type == 'Scan'
                 and fileinfo.date >= constants.ed_3_0_0_date.date())
             or (reprocess is True
-                and (fileinfo.linecount != fileinfo.infolinecount
-                     or (fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump')
-                         and fileinfo.stnlinecount != fileinfo.stationlinecount)
-                     or fileinfo.populatedlinecount != fileinfo.factionlinecount))):
+                and (fileinfo.line_count != fileinfo.info_file_line_count
+                     or (fileinfo.event_type in ('Docked', 'Location', 'CarrierJump')
+                         and fileinfo.station_file_line_count != fileinfo.station_line_count)
+                     or fileinfo.populated_line_count != fileinfo.faction_file_line_count))):
         fn = os.path.join(config.eddn_dir, fileinfo.date.isoformat()[:7], filename)
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
-            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.eventtype))
+            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.event_type))
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -56,7 +56,7 @@ def process(sysdb: EDDNSysDB,
                 infotoinsert = []
                 factionstoinsert = []
                 for lineno, line in enumerate(f):
-                    if (lineno + 1) not in infolines or (reprocessall is True and fileinfo.eventtype == 'Scan'):
+                    if (lineno + 1) not in infolines or (reprocessall is True and fileinfo.event_type == 'Scan'):
                         timer.time('read')
                         msg = None
                         try:
@@ -107,8 +107,8 @@ def process(sysdb: EDDNSysDB,
                         else:
                             if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
                                 marketid = None
-                            sqltimestamp = timestamptosql(timestamp)
-                            sqlgwtimestamp = timestamptosql(gwtimestamp)
+                            sqltimestamp = timestamp_to_datetime(timestamp)
+                            sqlgwtimestamp = timestamp_to_datetime(gwtimestamp)
                             timer.time('parse')
                             reject = False
                             reject_reason = None

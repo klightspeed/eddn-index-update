@@ -10,22 +10,22 @@ class EDDNSystem(NamedTuple):
     x: float
     y: float
     z: float
-    hascoords: bool
+    has_coords: bool
 
 
 class EDDNStation(NamedTuple):
     id: int
-    marketid: int
+    market_id: int
     name: str
-    systemname: str
-    systemid: int
+    system_name: str
+    system_id: int
     type: str
-    loctype: str
+    type_location: str
     body: Optional[str]
     bodyid: Optional[int]
-    isrejected: bool
-    validfrom: datetime
-    validuntil: datetime
+    is_rejected: bool
+    valid_from: datetime
+    valid_until: datetime
     test: bool
 
 
@@ -33,15 +33,15 @@ class EDDNFile(NamedTuple):
     id: int
     name: str
     date: datetime
-    eventtype: str
-    linecount: int
-    stnlinecount: int
-    infolinecount: int
-    factionlinecount: int
-    navroutesystemcount: int
-    populatedlinecount: int
-    stationlinecount: int
-    routesystemcount: int
+    event_type: str
+    line_count: int
+    station_file_line_count: int
+    info_file_line_count: int
+    faction_file_line_count: int
+    nav_route_system_count: int
+    populated_line_count: int
+    station_line_count: int
+    route_system_count: int
     test: bool
 
 
@@ -51,25 +51,25 @@ class EDDNRegion(NamedTuple):
     x0: float
     y0: float
     z0: float
-    sizex: float
-    sizey: float
-    sizez: float
-    regionaddr: int
-    isharegion: bool
+    size_x: float
+    size_y: float
+    size_z: float
+    region_address: int
+    is_sphere_sector: bool
 
 
 class EDDNBody(NamedTuple):
     id: int
     name: str
-    systemname: str
-    systemid: int
+    system_name: str
+    system_id: int
     bodyid: Optional[int]
     category: Optional[int]
-    argofperiapsis: float
-    validfrom: datetime
-    validuntil: datetime
-    isrejected: bool
-    designationid: Optional[int]
+    arg_of_periapsis: float
+    valid_from: datetime
+    valid_until: datetime
+    is_rejected: bool
+    designation_id: Optional[int]
 
 
 class EDDNFaction(NamedTuple):
@@ -83,9 +83,9 @@ class EDSMFile(NamedTuple):
     id: int
     name: str
     date: datetime
-    linecount: int
-    bodylinecount: int
-    comprsize: int
+    line_count: int
+    body_line_count: int
+    compressed_size: int
 
 
 class EDSMBody(TypedDict):
@@ -110,55 +110,55 @@ class Writable(Protocol):
 
 class ProcessorArgs(Protocol):
     reprocess: bool
-    reprocessall: bool
-    nojournal: bool
+    reprocess_all: bool
+    no_journal: bool
     market: bool
-    navroute: bool
-    edsmsys: bool
-    edsmbodies: bool
-    edsmmissingbodies: bool
-    edsmstations: bool
-    eddbsys: bool
-    eddbstations: bool
-    noeddn: bool
+    nav_route: bool
+    edsm_systems: bool
+    edsm_bodies: bool
+    edsm_missing_bodies: bool
+    edsm_stations: bool
+    eddb_systems: bool
+    eddb_stations: bool
+    no_eddn: bool
 
 
 DTypeEDSMSystem = numpy.dtype(
     [
-        ('sysid', '<i4'),
-        ('edsmid', '<i4'),
-        ('timestampseconds', '<i4'),
-        ('hascoords', 'i1'),
-        ('ishidden', 'i1'),
-        ('isdeleted', 'i1'),
+        ('system_id', '<i4'),
+        ('edsm_id', '<i4'),
+        ('timestamp_seconds', '<i4'),
+        ('has_coords', 'i1'),
+        ('is_hidden', 'i1'),
+        ('is_deleted', 'i1'),
         ('processed', 'i1')
     ]
 )
 
 DTypeEDDBSystem = numpy.dtype(
     [
-        ('sysid', '<i4'),
-        ('eddbid', '<i4'),
-        ('timestampseconds', '<i4')
+        ('system_id', '<i4'),
+        ('eddb_id', '<i4'),
+        ('timestamp_seconds', '<i4')
     ]
 )
 
 DTypeEDSMBody = numpy.dtype(
     [
-        ('bodyid', '<i4'),
-        ('edsmid', '<i4'),
-        ('timestampseconds', '<i4')
+        ('body_id', '<i4'),
+        ('edsm_id', '<i4'),
+        ('timestamp_seconds', '<i4')
     ]
 )
 
 
 class NPTypeEDSMSystem(Protocol):
-    sysid: numpy.intc
-    edsmid: numpy.intc
-    timestampseconds: numpy.intc
-    hascoords: numpy.byte
-    ishidden: numpy.byte
-    isdeleted: numpy.byte
+    system_id: numpy.intc
+    edsm_id: numpy.intc
+    timestamp_seconds: numpy.intc
+    has_coords: numpy.byte
+    is_hidden: numpy.byte
+    is_deleted: numpy.byte
     processed: numpy.byte
 
     def __getitem__(self, index: int):
@@ -169,9 +169,9 @@ class NPTypeEDSMSystem(Protocol):
 
 
 class NPTypeEDDBSystem(Protocol):
-    sysid: numpy.intc
-    eddbid: numpy.intc
-    timestampseconds: numpy.intc
+    system_id: numpy.intc
+    eddb_id: numpy.intc
+    timestamp_seconds: numpy.intc
 
     def __getitem__(self, index: int):
         ...
@@ -181,9 +181,9 @@ class NPTypeEDDBSystem(Protocol):
 
 
 class NPTypeEDSMBody(Protocol):
-    bodyid: numpy.intc
-    edsmid: numpy.intc
-    timestampseconds: numpy.intc
+    body_id: numpy.intc
+    edsm_id: numpy.intc
+    timestamp_seconds: numpy.intc
 
     def __getitem__(self, index: int):
         ...

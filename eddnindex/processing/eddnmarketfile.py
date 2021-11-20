@@ -9,7 +9,7 @@ from typing import Callable
 from ..config import Config
 from ..types import EDDNFile, Writable
 from ..eddnsysdb import EDDNSysDB
-from ..util import timestamptosql
+from ..util import timestamp_to_datetime
 from ..timer import Timer
 
 
@@ -22,10 +22,10 @@ def process(sysdb: EDDNSysDB,
             updatetitleprogress: Callable[[str], None],
             config: Config
             ):
-    if (fileinfo.linecount is None
+    if (fileinfo.line_count is None
         or (reprocess is True
-            and (fileinfo.linecount != fileinfo.stnlinecount
-                 or fileinfo.linecount != fileinfo.infolinecount))):
+            and (fileinfo.line_count != fileinfo.station_file_line_count
+                 or fileinfo.line_count != fileinfo.info_file_line_count))):
         fn = os.path.join(config.eddn_dir, fileinfo.date.isoformat()[:7], filename)
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
@@ -67,8 +67,8 @@ def process(sysdb: EDDNSysDB,
                         else:
                             if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
                                 marketid = None
-                            sqltimestamp = timestamptosql(timestamp)
-                            sqlgwtimestamp = timestamptosql(gwtimestamp)
+                            sqltimestamp = timestamp_to_datetime(timestamp)
+                            sqlgwtimestamp = timestamp_to_datetime(gwtimestamp)
                             timer.time('parse')
                             if (sqltimestamp is not None
                                     and sqlgwtimestamp is not None
@@ -98,7 +98,7 @@ def process(sysdb: EDDNSysDB,
                                                 sqltimestamp,
                                                 sqlgwtimestamp,
                                                 sysdb.software[software],
-                                                station.systemid,
+                                                station.system_id,
                                                 None,
                                                 len(line),
                                                 None,

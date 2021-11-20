@@ -4,12 +4,77 @@ import sys
 import json
 from datetime import datetime
 from typing import Callable
+import urllib.request
+import urllib.error
+import time
+from collections.abc import Collection
 
 from ..config import Config
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
-from ..util import timestamptosql
+from ..util import timestamp_to_datetime
 from ..timer import Timer
+from ..types import EDSMBody
+
+
+def getbodiesfromedsmbyid(edsmid: int, timer: Timer) -> Collection[EDSMBody]:
+    url = 'https://www.edsm.net/api-body-v1/get?id={0}'.format(edsmid)
+
+    while True:
+        try:
+            with urllib.request.urlopen(url) as f:
+                msg = json.load(f)
+                info = f.info()
+                ratereset = int(info["X-Rate-Limit-Reset"])
+                rateremain = int(info["X-Rate-Limit-Remaining"])
+                if ratereset > rateremain * 30:
+                    time.sleep(30)
+                elif ratereset > rateremain:
+                    time.sleep(ratereset / rateremain)
+        except urllib.error.URLError:
+            time.sleep(60)
+        else:
+            break
+
+    if type(msg) is dict and 'system' in msg:
+        edsmsys = msg['system']
+        edsmsysid = edsmsys['id']
+    else:
+        timer.time('edsmhttp')
+        return []
+
+    url = 'https://www.edsm.net/api-system-v1/bodies?systemId={0}'.format(edsmsysid)
+
+    while True:
+        try:
+            with urllib.request.urlopen(url) as f:
+                msg = json.load(f)
+                info = f.info()
+                ratereset = int(info["X-Rate-Limit-Reset"])
+                rateremain = int(info["X-Rate-Limit-Remaining"])
+                if ratereset > rateremain * 30:
+                    time.sleep(30)
+                elif ratereset > rateremain:
+                    time.sleep(ratereset / rateremain)
+        except urllib.error.URLError:
+            time.sleep(30)
+        else:
+            break
+
+    if type(msg) is dict:
+        sysid64 = msg['id64']
+        sysname = msg['name']
+    else:
+        timer.time('edsmhttp')
+        return []
+
+    for body in msg['bodies']:
+        body['systemId'] = edsmsysid
+        body['systemName'] = sysname
+        body['systemId64'] = sysid64
+
+    timer.time('edsmhttp')
+    return msg['bodies']
 
 
 def process(sysdb: EDDNSysDB,
@@ -41,7 +106,7 @@ def process(sysdb: EDDNSysDB,
                 sys.stderr.write('{0:10d}'.format(i) + '\b' * 10)
                 sys.stderr.flush()
 
-                bodies = sysdb.getbodiesfromedsmbyid(i, timer)
+                bodies = getbodiesfromedsmbyid(i, timer)
 
                 if len(bodies) == 0:
                     sysdb.updateedsmbodyid(0, i, constants.timestamp_base_date)
@@ -65,7 +130,7 @@ def process(sysdb: EDDNSysDB,
                         semimajor = msg.get('semiMajorAxis')
                         bodytype = msg['type']
                         subtype = msg['subType']
-                        sqltimestamp = timestamptosql(timestamp)
+                        sqltimestamp = timestamp_to_datetime(timestamp)
                         sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
                         timer.time('parse')
                         (sysid, _, _, _) = sysdb.findedsmsysid(edsmsysid)

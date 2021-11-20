@@ -1,10 +1,96 @@
 import sys
 from typing import Callable
+import urllib.request
+import urllib.error
+import json
+import time
+import math
 
 from ..config import Config
 from ..types import Writable
 from ..eddnsysdb import EDDNSysDB
 from ..timer import Timer
+from .. import constants
+from ..util import timestamp_to_datetime
+
+
+def updatesystemfromedsmbyid(sysdb: EDDNSysDB, edsmid: int, timer: Timer, rejectout: Writable) -> bool:
+    url = 'https://www.edsm.net/api-v1/system?systemId={0}&coords=1&showId=1&submitted=1&includeHidden=1'.format(edsmid)
+    try:
+        while True:
+            try:
+                with urllib.request.urlopen(url) as f:
+                    msg = json.load(f)
+                    info = f.info()
+            except urllib.error.URLError:
+                time.sleep(30)
+            else:
+                break
+
+        if type(msg) is dict:
+            edsmsysid = msg['id']
+            sysaddr = msg['id64']
+            sysname = msg['name']
+            timestamp = msg['date'].replace(' ', 'T')
+            if 'coords' in msg:
+                coords = msg['coords']
+                starpos = [coords['x'], coords['y'], coords['z']]
+            else:
+                starpos = None
+        else:
+            timer.time('edsmhttp')
+            return False
+    except (OverflowError, ValueError, TypeError, json.JSONDecodeError):
+        (exctype, excvalue, traceback) = sys.exc_info()
+        sys.stderr.write('Error: {0}\n'.format(exctype))
+        import pdb
+        pdb.post_mortem(traceback)
+        timer.time('error')
+        return True
+    else:
+        timer.time('edsmhttp')
+        sqltimestamp = timestamp_to_datetime(timestamp)
+        sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
+        (sysid, ts, hascoord, rec) = sysdb.findedsmsysid(edsmsysid)
+        timer.time('sysquery')
+        if starpos is not None:
+            starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in starpos]
+            (system, rejectReason, rejectData) = sysdb.getsystem(
+                timer,
+                sysname,
+                starpos[0],
+                starpos[1],
+                starpos[2],
+                sysaddr
+            )
+        else:
+            (system, rejectReason, rejectData) = sysdb.getsystem(
+                timer,
+                sysname,
+                None,
+                None,
+                None,
+                sysaddr
+            )
+
+        timer.time('sysquery', 0)
+
+        if system is not None:
+            rec = sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, starpos is not None, False, False)
+        else:
+            rejectmsg = {
+                'rejectReason': rejectReason,
+                'rejectData': rejectData,
+                'data': msg
+            }
+            rejectout.write(json.dumps(rejectmsg) + '\n')
+
+        timer.time('edsmupdate')
+
+        if rec is not None:
+            rec.processed = 7
+
+        return True
 
 
 def process(sysdb: EDDNSysDB,
@@ -32,7 +118,7 @@ def process(sysdb: EDDNSysDB,
             sys.stderr.write('{0:10d}'.format(row[1]) + '\b' * 10)
             sys.stderr.flush()
             rec = row
-            if not sysdb.updatesystemfromedsmbyid(row[1], timer, rejectout):
+            if not updatesystemfromedsmbyid(sysdb, row[1], timer, rejectout):
                 rec = sysdb.updateedsmsysid(row[1], row[0], row[2], False, False, True)
 
             rec.processed = 7
