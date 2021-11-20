@@ -90,16 +90,22 @@ class EDSMFile(NamedTuple):
 
 class EDSMBody(TypedDict):
     id: int
-    id64: int
-    bodyId: int
+    id64: Optional[int]
+    bodyId: Optional[int]
     name: str
     systemName: str
     systemId: int
+    systemId64: Optional[int]
+    updateTime: str
+    argOfPeriapsis: Optional[float]
+    semiMajorAxis: Optional[float]
+    type: str
+    subType: str
 
 
 class Writable(Protocol):
     def write(self, text: str):
-        pass
+        ...
 
 
 class ProcessorArgs(Protocol):
@@ -155,14 +161,32 @@ class NPTypeEDSMSystem(Protocol):
     isdeleted: numpy.byte
     processed: numpy.byte
 
+    def __getitem__(self, index: int):
+        ...
+
+    def __setitem__(self, index: int):
+        ...
+
 
 class NPTypeEDDBSystem(Protocol):
     sysid: numpy.intc
     eddbid: numpy.intc
     timestampseconds: numpy.intc
 
+    def __getitem__(self, index: int):
+        ...
+
+    def __setitem__(self, index: int):
+        ...
+
 
 class NPTypeEDSMBody(Protocol):
     bodyid: numpy.intc
     edsmid: numpy.intc
     timestampseconds: numpy.intc
+
+    def __getitem__(self, index: int):
+        ...
+
+    def __setitem__(self, index: int):
+        ...

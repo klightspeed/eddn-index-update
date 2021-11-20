@@ -163,7 +163,9 @@ class Config(object):
 
         self.known_bodies_sheet_uri = urls.get(
                 'KnownBodies',
-                'https://docs.google.com/spreadsheets/d/e/2PACX-1vR9lEav_Bs8rZGRtwcwuOwQ2hIoiNJ_PWYAEgXk7E3Y-UD0r6uER04y4VoQxFAAdjMS4oipPyySoC3t/pub?gid=711269421&single=true&output=tsv'
+                'https://docs.google.com/spreadsheets/d/e/'
+                '2PACX-1vR9lEav_Bs8rZGRtwcwuOwQ2hIoiNJ_PWYAEgXk7E3Y-UD0r6uER04y4VoQxFAAdjMS4oipPyySoC3t'
+                '/pub?gid=711269421&single=true&output=tsv'
         )
 
         self.allow_3_0_3_bodies = options.getboolean(

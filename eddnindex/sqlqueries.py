@@ -1,25 +1,25 @@
-from . import mysqlutils as mysql
 from typing import Sequence, Union, Callable, Optional
 from datetime import datetime
+from .database import DBConnection, DBCursor
 
 
-def execute(conn: mysql.DBConnection, query: str, params: Sequence = None) -> None:
+def execute(conn: DBConnection, query: str, params: Sequence = None) -> None:
     cursor = conn.cursor()
     cursor.execute(query, params)
 
 
-def executemany(conn: mysql.DBConnection, query: str, params: Sequence[Sequence]) -> None:
+def executemany(conn: DBConnection, query: str, params: Sequence[Sequence]) -> None:
     cursor = conn.cursor()
     cursor.executemany(query, params)
 
 
-def execute_getrowid(conn: mysql.DBConnection, query: str, params: Sequence = None) -> int:
+def execute_getrowid(conn: DBConnection, query: str, params: Sequence = None) -> int:
     cursor = conn.cursor()
     cursor.execute(query, params)
     return cursor.lastrowid
 
 
-def fetch_scalar(conn: mysql.DBConnection, query: str, params: Sequence = None)\
+def fetch_scalar(conn: DBConnection, query: str, params: Sequence = None)\
         -> Union[int, float, bool, str, bytes, datetime, None]:
     cursor = conn.cursor()
     cursor.execute(query, params)
@@ -27,69 +27,69 @@ def fetch_scalar(conn: mysql.DBConnection, query: str, params: Sequence = None)\
     return row[0]
 
 
-def fetch_scalar_int(conn: mysql.DBConnection, query: str, params: Sequence = None) -> int:
+def fetch_scalar_int(conn: DBConnection, query: str, params: Sequence = None) -> int:
     cursor = conn.cursor()
     cursor.execute(query, params)
     row = cursor.fetchone()
     return row[0]
 
 
-def fetch_one(conn: mysql.DBConnection, query: str, params: Sequence = None) -> Sequence:
+def fetch_one(conn: DBConnection, query: str, params: Sequence = None) -> Sequence:
     cursor = conn.cursor()
     cursor.execute(query, params)
     return cursor.fetchone()
 
 
-def fetch_all(conn: mysql.DBConnection, query: str, params: Sequence = None) -> Sequence[Sequence]:
+def fetch_all(conn: DBConnection, query: str, params: Sequence = None) -> Sequence[Sequence]:
     cursor = conn.cursor()
     cursor.execute(query, params)
     return cursor.fetchall()
 
 
-def fetch_streaming(conn: mysql.DBConnection, query: str, params: Sequence = None) -> mysql.DBCursor:
-    cursor = mysql.make_streaming_cursor(conn)
+def fetch_streaming(conn: DBConnection, query: str, params: Sequence = None) -> DBCursor:
+    cursor = conn.cursor(streaming=True)
     cursor.execute(query, params)
     return cursor
 
 
 def execute_partial(query: str) \
-        -> Callable[[mysql.DBConnection, Optional[Sequence]], None]:
+        -> Callable[[DBConnection, Optional[Sequence]], None]:
     return lambda conn, params: execute(conn, query, params)
 
 
 def executemany_partial(query: str) \
-        -> Callable[[mysql.DBConnection, Sequence[Sequence]], None]:
+        -> Callable[[DBConnection, Sequence[Sequence]], None]:
     return lambda conn, params: executemany(conn, query, params)
 
 
 def execute_getrowid_partial(query: str) \
-        -> Callable[[mysql.DBConnection, Optional[Sequence]], int]:
+        -> Callable[[DBConnection, Optional[Sequence]], int]:
     return lambda conn, params: execute_getrowid(conn, query, params)
 
 
 def fetch_scalar_partial(query: str)\
-        -> Callable[[mysql.DBConnection, Optional[Sequence]],
+        -> Callable[[DBConnection, Optional[Sequence]],
                     Union[int, float, bool, str, bytes, datetime, None]]:
     return lambda conn, params: fetch_scalar(conn, query, params)
 
 
 def fetch_scalar_int_partial(query: str)\
-        -> Callable[[mysql.DBConnection, Optional[Sequence]], int]:
+        -> Callable[[DBConnection, Optional[Sequence]], int]:
     return lambda conn, params: fetch_scalar_int(conn, query, params)
 
 
 def fetch_one_partial(query: str) \
-        -> Callable[[mysql.DBConnection, Optional[Sequence]], Sequence]:
+        -> Callable[[DBConnection, Optional[Sequence]], Sequence]:
     return lambda conn, params: fetch_one(conn, query, params)
 
 
 def fetch_all_partial(query: str) \
-        -> Callable[[mysql.DBConnection, Optional[Sequence]], Sequence[Sequence]]:
+        -> Callable[[DBConnection, Optional[Sequence]], Sequence[Sequence]]:
     return lambda conn, params: fetch_all(conn, query, params)
 
 
 def fetch_streaming_partial(query: str) \
-        -> Callable[[mysql.DBConnection, Optional[Sequence]], mysql.DBCursor]:
+        -> Callable[[DBConnection, Optional[Sequence]], DBCursor]:
     return lambda conn, params: fetch_streaming(conn, query, params)
 
 
@@ -104,7 +104,6 @@ query_software = 'SELECT Id, Name FROM Software'
 query_body_designations = 'SELECT Id, BodyDesignation, BodyCategory FROM SystemBodyDesignations WHERE IsUsed = 1'
 query_regions = 'SELECT Id, Name, X0, Y0, Z0, SizeX, SizeY, SizeZ, RegionAddress, IsHARegion FROM Regions'
 query_factions = 'SELECT Id, Name, Government, Allegiance FROM Factions'
-query_body_designation = 'SELECT Id, BodyDesignation, BodyCategory FROM SystemBodyDesignations WHERE BodyDesignation = %s'
 query_update_body_designation_used = 'UPDATE SystemBodyDesignations SET IsUsed = 1 WHERE Id = %s'
 query_update_system_coords = 'UPDATE Systems SET X = %s, Y = %s, Z = %s WHERE Id = %s'
 query_insert_software = 'INSERT INTO Software (Name) VALUES (%s)'
@@ -124,6 +123,15 @@ query_info_file_line_counts = 'SELECT FileId, COUNT(LineNo) FROM FileLineInfo GR
 query_faction_file_line_counts = 'SELECT FileId, COUNT(DISTINCT LineNo) FROM FileLineFactions GROUP BY FileId'
 query_route_file_line_counts = 'SELECT FileId, COUNT(*) FROM FileLineNavRoutes GROUP BY FileId'
 query_set_body_bodyid = 'UPDATE SystemBodies SET HasBodyId = 1, BodyID = %s WHERE Id = %s'
+
+query_body_designation = '''
+    SELECT
+        Id,
+        BodyDesignation,
+        BodyCategory
+    FROM SystemBodyDesignations
+    WHERE BodyDesignation = %s
+'''
 
 query_named_bodies = '''
     SELECT

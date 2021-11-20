@@ -15,7 +15,6 @@ import numpy.typing
 import numpy.core.records
 
 from . import edtslookup
-from . import mysqlutils as mysql
 from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, EDSMFile, EDDNRegion, EDDNStation, EDSMBody, \
     DTypeEDSMSystem, DTypeEDDBSystem, DTypeEDSMBody, NPTypeEDSMSystem, NPTypeEDDBSystem, NPTypeEDSMBody
 from .timer import Timer
@@ -23,10 +22,11 @@ from . import constants
 from .util import timestamptosql
 from .config import Config
 from . import sqlqueries
+from .database import DBConnection
 
 
 class EDDNSysDB(object):
-    conn: mysql.DBConnection
+    conn: DBConnection
     regions: Dict[str, EDDNRegion]
     regionaddrs: Dict[int, EDDNRegion]
     namedsystems: Dict[str, Union[EDDNSystem, List[EDDNSystem]]]
@@ -42,7 +42,7 @@ class EDDNSysDB(object):
     knownbodiessheeturi: str
     edsmbodycachefile: str
 
-    def __init__(self, conn: mysql.DBConnection, loadedsmsys: bool, loadedsmbodies: bool, loadeddbsys: bool,
+    def __init__(self, conn: DBConnection, loadedsmsys: bool, loadedsmbodies: bool, loadeddbsys: bool,
                  config: Config):
         self.conn = conn
         self.regions = {}
@@ -85,7 +85,7 @@ class EDDNSysDB(object):
         finally:
             timer.printstats()
 
-    def loadedsmsystems(self, conn: mysql.DBConnection, timer: Timer):
+    def loadedsmsystems(self, conn: DBConnection, timer: Timer):
         maxedsmsysid = sqlqueries.get_max_edsm_systemid(conn)
 
         timer.time('sql')
@@ -140,7 +140,7 @@ class EDDNSysDB(object):
                     self.edsmsysids.tofile(f)
                 os.rename(self.edsmsyscachefile + '.tmp', self.edsmsyscachefile)
 
-    def loadeddbsystems(self, conn: mysql.DBConnection, timer: Timer):
+    def loadeddbsystems(self, conn: DBConnection, timer: Timer):
         maxeddbsysid = sqlqueries.get_max_eddb_systemid(conn)
 
         timer.time('sql')
@@ -176,7 +176,7 @@ class EDDNSysDB(object):
                 timer.time('loadeddbsys', len(rows))
             sys.stderr.write('  {0} / {1}\n'.format(i, maxeddbsysid))
 
-    def loadedsmbodies(self, conn: mysql.DBConnection, timer: Timer):
+    def loadedsmbodies(self, conn: DBConnection, timer: Timer):
         maxedsmbodyid = sqlqueries.get_max_edsm_bodyid(conn)
 
         timer.time('sql')
@@ -224,7 +224,7 @@ class EDDNSysDB(object):
                     timer.time('loadedsmbody', len(rows))
                 sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmbodyid))
 
-    def loadparentsets(self, conn: mysql.DBConnection, timer: Timer):
+    def loadparentsets(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Parent Sets\n')
         rows = sqlqueries.get_parentsets(conn)
         timer.time('sqlparents', len(rows))
@@ -232,7 +232,7 @@ class EDDNSysDB(object):
             self.parentsets[(int(row[1]), row[2])] = int(row[0])
         timer.time('loadparents', len(rows))
 
-    def loadsoftware(self, conn: mysql.DBConnection, timer: Timer):
+    def loadsoftware(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Software\n')
         rows = sqlqueries.get_software(conn)
         timer.time('sqlsoftware', len(rows))
@@ -240,7 +240,7 @@ class EDDNSysDB(object):
             self.software[row[1]] = int(row[0])
         timer.time('loadsoftware', len(rows))
 
-    def loadbodydesigs(self, conn: mysql.DBConnection, timer: Timer):
+    def loadbodydesigs(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Body Designations\n')
         rows = sqlqueries.get_body_designations(conn)
         timer.time('sqlbodydesigs', len(rows))
@@ -248,7 +248,7 @@ class EDDNSysDB(object):
             self.bodydesigs[row[1]] = (int(row[0]), int(row[2]))
         timer.time('loadbodydesigs', len(rows))
 
-    def loadnamedbodies(self, conn: mysql.DBConnection, timer: Timer):
+    def loadnamedbodies(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Named Bodies\n')
         rows = sqlqueries.get_named_bodies(conn)
         timer.time('sqlbodyname', len(rows))
@@ -267,7 +267,7 @@ class EDDNSysDB(object):
 
         timer.time('loadbodyname')
 
-    def loadnamedsystems(self, conn: mysql.DBConnection, timer: Timer):
+    def loadnamedsystems(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Named Systems\n')
         rows = sqlqueries.get_named_systems(conn)
         timer.time('sqlname', len(rows))
@@ -285,7 +285,7 @@ class EDDNSysDB(object):
 
         timer.time('loadname', len(rows))
 
-    def loadregions(self, conn: mysql.DBConnection, timer: Timer):
+    def loadregions(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Regions\n')
         rows = sqlqueries.get_regions(conn)
         timer.time('sqlregion', len(rows))
@@ -297,7 +297,7 @@ class EDDNSysDB(object):
 
         timer.time('loadregion', len(rows))
 
-    def loadfactions(self, conn: mysql.DBConnection, timer: Timer):
+    def loadfactions(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Factions\n')
         rows = sqlqueries.get_factions(conn)
         timer.time('sqlfactions')
@@ -1036,7 +1036,7 @@ class EDDNSysDB(object):
             candidates = [
                 c
                 for c in candidates
-                if c[0].validfrom <= timestamp and c[0].validuntil > timestamp
+                if c[0].validfrom <= timestamp < c[0].validuntil
             ]
 
         if len(candidates) > 1:
@@ -1599,7 +1599,7 @@ class EDDNSysDB(object):
                 None
             )
 
-    def getfaction(self, timer: Timer, name: str, government: str, allegiance: str):
+    def getfaction(self, timer: Timer, name: str, government: str, allegiance: Optional[str]):
         factions = None
 
         if government[:12] == '$government_' and government[-1] == ';':
@@ -1903,7 +1903,7 @@ class EDDNSysDB(object):
         else:
             return (None, None)
 
-    def updateeddbsysid(self, eddbid: int, sysid: int, ts: datetime):
+    def updateeddbsysid(self, eddbid: int, sysid: int, ts: int):
         sqlqueries.insert_eddb_system(self.conn, (eddbid, sysid, ts, sysid, ts))
 
     def addfilelinestations(self, linelist: List[Tuple[int, int, EDDNStation]]):

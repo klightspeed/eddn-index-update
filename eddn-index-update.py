@@ -4,7 +4,7 @@ import sys
 import argparse
 from eddnindex.config import Config
 from eddnindex.timer import Timer
-import eddnindex.process as process
+import eddnindex.processing.main as process
 from eddnindex.proctitleprogress import update_title_progress
 
 def unhandledexception(type, value, traceback):
