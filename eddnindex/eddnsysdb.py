@@ -7,18 +7,19 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 import urllib.request
 import urllib.error
-from typing import Iterable, MutableSequence, Optional, Set, \
+from typing import Any, Iterable, MutableSequence, Optional, Set, \
                    Tuple, List, Dict, Union, Sequence
 
 import numpy
 import numpy.typing
 import numpy.core.records
+from collections.abc import Mapping, Collection
 
 from . import edtslookup
 from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, \
                    EDSMFile, EDDNRegion, EDDNStation, DTypeEDSMSystem, \
-                   DTypeEDDBSystem, DTypeEDSMBody, NPTypeEDSMSystem, \
-                   NPTypeEDDBSystem, NPTypeEDSMBody
+                   DTypeEDDBSystem, DTypeEDSMBody, KnownBody, NPTypeEDSMSystem, \
+                   NPTypeEDDBSystem, NPTypeEDSMBody, RejectData
 from .timer import Timer
 from . import constants
 from .util import id64_to_modsysaddr, modsysaddr_to_id64, from_db_string
@@ -31,18 +32,19 @@ class EDDNSysDB(object):
     conn: DBConnection
     regions: Dict[str, EDDNRegion]
     regionaddrs: Dict[int, EDDNRegion]
-    namedsystems: Dict[str, Union[EDDNSystem, List[EDDNSystem]]]
-    namedbodies: Dict[int, Dict[str, Union[EDDNBody, List[EDDNBody]]]]
+    namedsystems: Dict[str, List[EDDNSystem]]
+    namedbodies: Dict[int, Dict[str, List[EDDNBody]]]
     parentsets: Dict[Tuple[int, str], int]
     bodydesigs: Dict[str, Tuple[int, int]]
     software: Dict[str, int]
-    factions: Dict[str, Union[EDDNFaction, List[EDDNFaction]]]
-    edsmsysids: Union[MutableSequence[NPTypeEDSMSystem], numpy.ndarray, None]
-    edsmbodyids: Union[MutableSequence[NPTypeEDDBSystem], numpy.ndarray, None]
-    eddbsysids: Union[MutableSequence[NPTypeEDSMBody], numpy.ndarray, None]
+    factions: Dict[str, List[EDDNFaction]]
+    edsmsysids: numpy.core.records.recarray
+    edsmbodyids: numpy.core.records.recarray
+    eddbsysids: numpy.core.records.recarray
     edsmsyscachefile: str
     knownbodiessheeturi: str
     edsmbodycachefile: str
+    knownbodies: Dict[str, Dict[str, List[KnownBody]]]
 
     def __init__(self,
                  conn: DBConnection,
@@ -60,9 +62,22 @@ class EDDNSysDB(object):
         self.software = {}
         self.factions = {}
         self.knownbodies = {}
-        self.edsmsysids = None
-        self.edsmbodyids = None
-        self.eddbsysids = None
+        
+        self.edsmsysids = numpy.empty(
+            0,
+            DTypeEDSMSystem
+        ).view(numpy.core.records.recarray)
+
+        self.edsmbodyids = numpy.empty(
+            0,
+            DTypeEDSMBody
+        ).view(numpy.core.records.recarray)
+
+        self.eddbsysids = numpy.empty(
+            0,
+            DTypeEDDBSystem
+        ).view(numpy.core.records.recarray)
+
         self.edsmsyscachefile = config.edsm_systems_cache_file
         self.knownbodiessheeturi = config.known_bodies_sheet_uri
         self.edsmbodycachefile = config.edsm_bodies_cache_file
@@ -92,7 +107,7 @@ class EDDNSysDB(object):
             timer.printstats()
 
     def loadedsmsystems(self, conn: DBConnection, timer: Timer):
-        maxedsmsysid = sqlqueries.get_max_edsm_system_id(conn)
+        maxedsmsysid = sqlqueries.get_max_edsm_system_id(conn, None)
 
         timer.time('sql')
 
@@ -114,8 +129,8 @@ class EDDNSysDB(object):
 
                 timer.time('loadedsmsys', len(edsmsysarray))
 
-            if self.edsmsysids is None:
-                c = sqlqueries.get_edsm_systems(conn)
+            if len(self.edsmsysids) == 0:
+                c = sqlqueries.get_edsm_systems(conn, None)
 
                 edsmsysarray = numpy.zeros(
                     maxedsmsysid + 1048576,
@@ -173,13 +188,13 @@ class EDDNSysDB(object):
                 )
 
     def loadeddbsystems(self, conn: DBConnection, timer: Timer):
-        maxeddbsysid = sqlqueries.get_max_eddb_system_id(conn)
+        maxeddbsysid = sqlqueries.get_max_eddb_system_id(conn, None)
 
         timer.time('sql')
 
         if maxeddbsysid:
             sys.stderr.write('Loading EDDB System IDs\n')
-            c = sqlqueries.get_eddb_systems(conn)
+            c = sqlqueries.get_eddb_systems(conn, None)
 
             eddbsysarray = numpy.zeros(
                 maxeddbsysid + 1048576,
@@ -222,7 +237,7 @@ class EDDNSysDB(object):
             )
 
     def loadedsmbodies(self, conn: DBConnection, timer: Timer):
-        maxedsmbodyid = sqlqueries.get_max_edsm_body_id(conn)
+        maxedsmbodyid = sqlqueries.get_max_edsm_body_id(conn, None)
 
         timer.time('sql')
 
@@ -238,14 +253,15 @@ class EDDNSysDB(object):
                             edsmbodyarray,
                             maxedsmbodyid + 1048576
                         )
+
                     self.edsmbodyids = edsmbodyarray.view(
                         numpy.core.records.recarray
                     )
 
                 timer.time('loadedsmbody', len(edsmbodyarray))
 
-            if self.edsmbodyids is None:
-                c = sqlqueries.get_edsm_bodies(conn)
+            if len(self.edsmbodyids) == 0:
+                c = sqlqueries.get_edsm_bodies(conn, None)
 
                 edsmbodyarray = numpy.zeros(
                     maxedsmbodyid + 1048576,
@@ -295,7 +311,7 @@ class EDDNSysDB(object):
 
     def loadparentsets(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Parent Sets\n')
-        rows = sqlqueries.get_parent_sets(conn)
+        rows = sqlqueries.get_parent_sets(conn, None)
         timer.time('sqlparents', len(rows))
         for row in rows:
             self.parentsets[(int(row[1]), row[2])] = int(row[0])
@@ -303,7 +319,7 @@ class EDDNSysDB(object):
 
     def loadsoftware(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Software\n')
-        rows = sqlqueries.get_software(conn)
+        rows = sqlqueries.get_software(conn, None)
         timer.time('sqlsoftware', len(rows))
         for row in rows:
             self.software[row[1]] = int(row[0])
@@ -311,7 +327,7 @@ class EDDNSysDB(object):
 
     def loadbodydesigs(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Body Designations\n')
-        rows = sqlqueries.get_body_designations(conn)
+        rows = sqlqueries.get_body_designations(conn, None)
         timer.time('sqlbodydesigs', len(rows))
         for row in rows:
             self.bodydesigs[row[1]] = (int(row[0]), int(row[2]))
@@ -319,7 +335,7 @@ class EDDNSysDB(object):
 
     def loadnamedbodies(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Named Bodies\n')
-        rows = sqlqueries.get_named_bodies(conn)
+        rows = sqlqueries.get_named_bodies(conn, None)
         timer.time('sqlbodyname', len(rows))
         for row in rows:
             bi = EDDNBody(
@@ -341,19 +357,17 @@ class EDDNSysDB(object):
 
             snb = self.namedbodies[bi.system_id]
 
-            if bi.name not in snb:
-                snb[bi.name] = bi
-            elif type(snb[bi.name]) is not list:
-                snb[bi.name] = [snb[bi.name]]
-                snb[bi.name] += [bi]
+            snbent = snb.get(bi.name)
+            if snbent is None:
+                snb[bi.name] = [bi]
             else:
-                snb[bi.name] += [bi]
+                snbent.append(bi)
 
         timer.time('loadbodyname')
 
     def loadnamedsystems(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Named Systems\n')
-        rows = sqlqueries.get_named_systems(conn)
+        rows = sqlqueries.get_named_systems(conn, None)
         timer.time('sqlname', len(rows))
 
         for row in rows:
@@ -367,19 +381,18 @@ class EDDNSysDB(object):
                 row[3] != 0 and row[4] != 0 and row[5] != 0
             )
 
-            if si.name not in self.namedsystems:
-                self.namedsystems[si.name] = si
-            elif type(self.namedsystems[si.name]) is not list:
-                self.namedsystems[si.name] = [self.namedsystems[si.name]]
-                self.namedsystems[si.name] += [si]
+            nsent = self.namedsystems.get(si.name)
+
+            if nsent is None:
+                self.namedsystems[si.name] = [si]
             else:
-                self.namedsystems[si.name] += [si]
+                nsent.append(si)
 
         timer.time('loadname', len(rows))
 
     def loadregions(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Regions\n')
-        rows = sqlqueries.get_regions(conn)
+        rows = sqlqueries.get_regions(conn, None)
         timer.time('sqlregion', len(rows))
         for row in rows:
             ri = EDDNRegion(
@@ -404,26 +417,28 @@ class EDDNSysDB(object):
 
     def loadfactions(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Factions\n')
-        rows = sqlqueries.get_factions(conn)
+        rows = sqlqueries.get_factions(conn, None)
         timer.time('sqlfactions')
 
         for row in rows:
             fi = EDDNFaction(row[0], row[1], row[2], row[3])
-            if fi.name not in self.factions:
-                self.factions[fi.name] = fi
-            elif type(self.factions[fi.name]) is not list:
-                self.factions[fi.name] = [self.factions[fi.name]]
-                self.factions[fi.name].append(fi)
+
+            faction_entry = self.factions.get(fi.name)
+
+            if faction_entry is None:
+                self.factions[fi.name] = [fi]
             else:
-                self.factions[fi.name].append(fi)
+                faction_entry.append(fi)
 
         timer.time('loadfactions')
 
     def loadknownbodies(self, timer: Timer):
         sys.stderr.write('Loading Known Bodies\n')
-        knownbodies = {}
+        knownbodies: Dict[str, Dict[str, List[KnownBody]]] = {}
 
         with urllib.request.urlopen(self.knownbodiessheeturi) as f:
+            line: bytes
+
             for line in f:
                 fields = line.decode('utf-8').strip().split('\t')
                 if (len(fields) >= 7
@@ -440,7 +455,7 @@ class EDDNSysDB(object):
                     desig = bodydesig[len(sysname):]
 
                     if desig not in self.bodydesigs:
-                        row = sqlqueries.query_body_designation(
+                        row = sqlqueries.get_body_designation(
                             self.conn,
                             (desig,)
                         )
@@ -456,12 +471,16 @@ class EDDNSysDB(object):
 
                     if desig in self.bodydesigs:
                         desigid, category = self.bodydesigs[desig]
+
                         if sysname not in knownbodies:
                             knownbodies[sysname] = {}
+
                         sysknownbodies = knownbodies[sysname]
+
                         if bodyname not in sysknownbodies:
                             sysknownbodies[bodyname] = []
-                        sysknownbodies[bodyname] += [
+
+                        sysknownbodies[bodyname].append(
                             {
                                 'SystemAddress': sysaddr,
                                 'SystemName': sysname,
@@ -470,7 +489,7 @@ class EDDNSysDB(object):
                                 'BodyDesignation': bodydesig,
                                 'BodyDesignationId': desigid
                             }
-                        ]
+                        )
                     else:
                         import pdb
                         pdb.set_trace()
@@ -482,28 +501,32 @@ class EDDNSysDB(object):
         self.conn.commit()
 
     def _findsystem(self,
-                    cursor: Union[Sequence[EDDNSystem], Sequence[Sequence]],
+                    cursor: Union[Sequence[EDDNSystem],
+                                  Sequence[Sequence]],
                     sysname: str,
-                    starpos: Union[Tuple[float, float, float], List[float]],
+                    starpos: Union[Tuple[float, float, float], 
+                                   List[float],
+                                   None],
                     sysaddr: Optional[int],
                     syslist: Set[EDDNSystem]):
         rows = list(cursor)
-        systems: Union[MutableSequence[EDDNSystem], Set[EDDNSystem]]
+        systems: Set[EDDNSystem] = set()
 
-        if len(rows) > 0 and type(rows[0]) is EDDNSystem:
-            systems = rows
-        else:
-            systems = set(
-                EDDNSystem(
-                    row[0],
-                    row[1],
-                    from_db_string(row[2]),
-                    row[3] / 32.0 - 49985,
-                    row[4] / 32.0 - 40985,
-                    row[5] / 32.0 - 24105,
-                    row[3] != 0 and row[4] != 0 and row[5] != 0
-                ) for row in rows
-            )
+        for row in rows:
+            if isinstance(row, EDDNSystem):
+                systems.add(row)
+            else:
+                systems.add(
+                    EDDNSystem(
+                        row[0],
+                        row[1],
+                        from_db_string(row[2]),
+                        row[3] / 32.0 - 49985,
+                        row[4] / 32.0 - 40985,
+                        row[5] / 32.0 - 24105,
+                        row[3] != 0 and row[4] != 0 and row[5] != 0
+                    )
+                )
 
         if starpos is not None or sysaddr is not None:
             matches: Set[EDDNSystem] = set()
@@ -545,11 +568,7 @@ class EDDNSysDB(object):
         systems: List[EDDNSystem] = []
 
         if sysname in self.namedsystems:
-            nsystems = self.namedsystems[sysname]
-            if type(nsystems) is EDDNSystem:
-                systems = [nsystems]
-            else:
-                systems = nsystems
+            systems = self.namedsystems[sysname]
             systems = [s for s in systems]
 
         procgen_sysname_match = constants.procgen_sysname_re.match(sysname)
@@ -622,81 +641,21 @@ class EDDNSysDB(object):
 
     def getrejectdata(self,
                       sysname: str,
-                      sysaddr: int,
+                      sysaddr: Optional[int],
                       systems: Optional[Iterable[EDDNSystem]]
                       ):
         pgsysmatch = constants.procgen_sysname_re.match(sysname)
-        rejectdata = {}
+        rejectdata: RejectData = {
+            'id64name': None,
+            'nameid64': None,
+            'systems': []
+        }
 
         if sysaddr is not None:
-            modsysaddr = id64_to_modsysaddr(sysaddr)
-            regionaddr = modsysaddr >> 40
-            if regionaddr in self.regionaddrs:
-                region_info = self.regionaddrs[regionaddr]
-                masscode = chr(((modsysaddr >> 37) & 7) + 97)
-                seq = str(modsysaddr & 65535)
-                mid = (modsysaddr >> 16) & 2097151
-                mid1a = chr((mid % 26) + 65)
-                mid1b = chr(((mid // 26) % 26) + 65)
-                mid2 = chr(((mid // (26 * 26)) % 26) + 65)
-                mid3 = mid // (26 * 26 * 26)
-                mid3 = '' if mid3 == 0 else str(mid3) + '-'
-                rejectdata['id64name'] = '{0} {1}{2}-{3} {4}{5}{6}'.format(
-                    region_info.name,
-                    mid1a,
-                    mid1b,
-                    mid2,
-                    masscode,
-                    mid3,
-                    seq
-                )
+            self.rejectdata_add_id64name(sysaddr, rejectdata)
 
         if pgsysmatch:
-            regionname: str = pgsysmatch[1]
-            mid1_2: str = pgsysmatch[2].upper()
-            sizecls: str = pgsysmatch[3].lower()
-            mid3 = int(pgsysmatch[4] or "0")
-            seq = int(pgsysmatch[5])
-            mid1a = ord(mid1_2[0]) - 65
-            mid1b = ord(mid1_2[1]) - 65
-            mid2 = ord(mid1_2[3]) - 65
-            mid = (((mid3 * 26 + mid2) * 26 + mid1b) * 26 + mid1a)
-            sz = ord(sizecls) - 97
-            sx = 7 - sz
-            sp = 320 << sz
-            sb = 0x7F >> sz
-
-            if regionname.lower() in self.regions:
-                region_info = self.regions[regionname.lower()]
-                modsysaddr = None
-
-                if region_info.is_sphere_sector:
-                    x0 = math.floor(region_info.x0 / sp) + (mid & 0x7F)
-                    y0 = math.floor(region_info.y0 / sp) + ((mid >> 7) & 0x7F)
-                    z0 = math.floor(region_info.z0 / sp) + ((mid >> 14) & 0x7F)
-                    x1 = x0 & sb
-                    x2 = x0 >> sx
-                    y1 = y0 & sb
-                    y2 = y0 >> sx
-                    z1 = z0 & sb
-                    z2 = z0 >> sx
-                    modsysaddr = ((z2 << 53)
-                                  | (y2 << 47)
-                                  | (x2 << 40)
-                                  | (sz << 37)
-                                  | (z1 << 30)
-                                  | (y1 << 23)
-                                  | (x1 << 16)
-                                  | seq)
-
-                    rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
-                elif region_info.region_address is not None:
-                    modsysaddr = ((region_info.region_address << 40)
-                                  | (sz << 37)
-                                  | (mid << 16)
-                                  | seq)
-
-                    rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
+            self.rejectdata_add_nameid64(pgsysmatch, rejectdata)
 
         if systems is not None:
             rejectdata['systems'] = [{
@@ -710,6 +669,76 @@ class EDDNSysDB(object):
 
         return rejectdata
 
+    def rejectdata_add_nameid64(self, pgsysmatch, rejectdata):
+        regionname: str = pgsysmatch[1]
+        mid1_2: str = pgsysmatch[2].upper()
+        sizecls: str = pgsysmatch[3].lower()
+        mid3 = int(pgsysmatch[4] or "0")
+        seq = int(pgsysmatch[5])
+        mid1a = ord(mid1_2[0]) - 65
+        mid1b = ord(mid1_2[1]) - 65
+        mid2 = ord(mid1_2[3]) - 65
+        mid = (((mid3 * 26 + mid2) * 26 + mid1b) * 26 + mid1a)
+        sz = ord(sizecls) - 97
+        sx = 7 - sz
+        sp = 320 << sz
+        sb = 0x7F >> sz
+
+        if regionname.lower() in self.regions:
+            region_info = self.regions[regionname.lower()]
+            modsysaddr = None
+
+            if region_info.is_sphere_sector:
+                x0 = math.floor(region_info.x0 / sp) + (mid & 0x7F)
+                y0 = math.floor(region_info.y0 / sp) + ((mid >> 7) & 0x7F)
+                z0 = math.floor(region_info.z0 / sp) + ((mid >> 14) & 0x7F)
+                x1 = x0 & sb
+                x2 = x0 >> sx
+                y1 = y0 & sb
+                y2 = y0 >> sx
+                z1 = z0 & sb
+                z2 = z0 >> sx
+                modsysaddr = ((z2 << 53)
+                                  | (y2 << 47)
+                                  | (x2 << 40)
+                                  | (sz << 37)
+                                  | (z1 << 30)
+                                  | (y1 << 23)
+                                  | (x1 << 16)
+                                  | seq)
+
+                rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
+            elif region_info.region_address is not None:
+                modsysaddr = ((region_info.region_address << 40)
+                                  | (sz << 37)
+                                  | (mid << 16)
+                                  | seq)
+
+                rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
+
+    def rejectdata_add_id64name(self, sysaddr, rejectdata):
+        modsysaddr = id64_to_modsysaddr(sysaddr)
+        regionaddr = modsysaddr >> 40
+        if regionaddr in self.regionaddrs:
+            region_info = self.regionaddrs[regionaddr]
+            masscode = chr(((modsysaddr >> 37) & 7) + 97)
+            seq = int(modsysaddr & 65535)
+            mid = (modsysaddr >> 16) & 2097151
+            mid1a = chr((mid % 26) + 65)
+            mid1b = chr(((mid // 26) % 26) + 65)
+            mid2 = chr(((mid // (26 * 26)) % 26) + 65)
+            mid3 = mid // (26 * 26 * 26)
+            mid3s = '' if mid3 == 0 else str(mid3) + '-'
+            rejectdata['id64name'] = '{0} {1}{2}-{3} {4}{5}{6}'.format(
+                    region_info.name,
+                    mid1a,
+                    mid1b,
+                    mid2,
+                    masscode,
+                    mid3s,
+                    seq
+                )
+
     @lru_cache(maxsize=262144)
     def getsystem(self,
                   timer: Timer,
@@ -720,6 +749,8 @@ class EDDNSysDB(object):
                   sysaddr: Optional[int]
                   ) -> Union[Tuple[EDDNSystem, None, None],
                              Tuple[None, str, dict]]:
+        starpos: Optional[List[float]]
+        
         if x is not None and y is not None and z is not None:
             starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in (x, y, z)]
             vx = int((starpos[0] + 49985) * 32)
@@ -735,8 +766,6 @@ class EDDNSysDB(object):
 
         if sysname in self.namedsystems:
             namedsystems = self.namedsystems[sysname]
-            if type(namedsystems) is not list:
-                namedsystems = [namedsystems]
 
             system = self._findsystem(
                 namedsystems,
@@ -941,7 +970,7 @@ class EDDNSysDB(object):
                      | (vx // 40960))
 
             if starpos is None or raddr == modsysaddr >> 40:
-                cursor = sqlqueries.insert_system(
+                sysid = sqlqueries.insert_system(
                     self.conn,
                     (
                         modsysaddr,
@@ -952,7 +981,7 @@ class EDDNSysDB(object):
                         0
                     )
                 )
-                sysid = cursor.lastrowid
+
                 if region_info.is_sphere_sector:
                     sqlqueries.insert_sphere_sector_system(
                         self.conn,
@@ -1068,7 +1097,7 @@ class EDDNSysDB(object):
                     if (vx - 2 <= row[3] <= vx + 2
                             and vy - 2 <= row[4] <= vy + 2
                             and vz - 2 <= row[5] <= vz + 2):
-                        systems += [
+                        systems.add(
                             EDDNSystem(
                                 row[0],
                                 row[1],
@@ -1078,7 +1107,7 @@ class EDDNSysDB(object):
                                 row[5] / 32.0 - 24105,
                                 row[3] != 0 and row[4] != 0 and row[5] != 0
                             )
-                        ]
+                        )
 
         timer.time('sysselectmaddr')
 
@@ -1174,7 +1203,7 @@ class EDDNSysDB(object):
         candidates = []
 
         for station in stations:
-            replace = {}
+            replace: Dict[str, Any] = {}
 
             if marketid is not None:
                 if station.market_id is not None and marketid != station.market_id:
@@ -1209,7 +1238,7 @@ class EDDNSysDB(object):
             candidates += [(station, replace)]
 
         if len(candidates) > 1 and bodyid is not None:
-            bidcandidates = [c for c in candidates if c[0].body_id is not None]
+            bidcandidates = [c for c in candidates if c[0].bodyid is not None]
             if len(bidcandidates) == 1:
                 candidates = bidcandidates
 
@@ -1286,7 +1315,7 @@ class EDDNSysDB(object):
                         'stationType': s.type,
                         'locationStationType': s.type_location,
                         'bodyName': s.body,
-                        'bodyId': s.body_id,
+                        'bodyId': s.bodyid,
                         'isRejected': True if s.is_rejected else False,
                         'validFrom': s.valid_from.isoformat(),
                         'validUntil': s.valid_until.isoformat(),
@@ -1386,39 +1415,36 @@ class EDDNSysDB(object):
     def getbody(self, timer: Timer, name: str, sysname: str, bodyid: int, system, body, timestamp):
         if system.id in self.namedbodies and name in self.namedbodies[system.id]:
             timer.time('bodyquery', 0)
-            rows = self.namedbodies[system.id][name]
+            nrows = self.namedbodies[system.id][name]
 
-            if type(rows) is not list:
-                rows = [rows]
-
-            multimatch = len(rows) > 1
+            multimatch = len(nrows) > 1
 
             if bodyid is not None:
-                rows = [row for row in rows if row.bodyid is None or row.bodyid == bodyid]
+                nrows = [row for row in nrows if row.bodyid is None or row.bodyid == bodyid]
 
-            if len(rows) > 1 and name == sysname:
+            if len(nrows) > 1 and name == sysname:
                 if 'PlanetClass' in body:
-                    rows = [row for row in rows if row.category == 6]
+                    nrows = [row for row in nrows if row.category == 6]
                 elif 'StarType' in body:
-                    rows = [row for row in rows if row.category == 2]
+                    nrows = [row for row in nrows if row.category == 2]
 
             if multimatch and 'Periapsis' in body:
                 aop = body['Periapsis']
-                if len(rows) == 1 and rows[0].arg_of_periapsis is None:
+                if len(nrows) == 1 and nrows[0].arg_of_periapsis is None:
                     pass
-                elif len(rows) > 1:
-                    rows = [row for row in rows if
+                elif len(nrows) > 1:
+                    nrows = [row for row in nrows if
                             row.arg_of_periapsis is None or ((aop + 725 - row.arg_of_periapsis) % 360) < 10]
 
-            if len(rows) > 1:
-                rows = [row for row in rows if row.valid_from < timestamp < row.valid_until]
+            if len(nrows) > 1:
+                nrows = [row for row in nrows if row.valid_from < timestamp < row.valid_until]
 
-            if len(rows) > 1:
-                rows = [row for row in rows if row.is_rejected == 0]
+            if len(nrows) > 1:
+                nrows = [row for row in nrows if row.is_rejected == 0]
 
             timer.time('bodylookupname')
-            if len(rows) == 1:
-                return (rows[0], None, None)
+            if len(nrows) == 1:
+                return (nrows[0], None, None)
 
         ispgname = name.startswith(sysname)
         if name == sysname:
@@ -1454,11 +1480,11 @@ class EDDNSysDB(object):
             if desig in self.bodydesigs:
                 desigid, category = self.bodydesigs[desig]
             else:
-                row = sqlqueries.get_body_designation(self.conn, (desig,))
+                dbrow = sqlqueries.get_body_designation(self.conn, (desig,))
 
-                if row and row[1] == desig:
-                    desigid = int(row[0])
-                    category = int(row[2])
+                if dbrow and dbrow[1] == desig:
+                    desigid = int(dbrow[0])
+                    category = int(dbrow[2])
                     self.bodydesigs[desig] = (desigid, category)
                     sqlqueries.set_body_designation_used(self.conn, (desigid,))
                 elif match:
@@ -1577,62 +1603,71 @@ class EDDNSysDB(object):
             timer.time('bodyquerypgre')
 
         timer.time('bodyquery', 0)
-        rows = sqlqueries.get_bodies_by_name(self.conn, (system.id, name, 1))
-        rows += sqlqueries.get_bodies_by_name(self.conn, (system.id, name, 0))
+        
+        dbrows = list(sqlqueries.get_bodies_by_name(
+            self.conn,
+            (system.id, name, 1)
+        ))
+        
+        dbrows.append(sqlqueries.get_bodies_by_name(
+            self.conn,
+            (system.id, name, 0))
+        )
+
         timer.time('bodyselectname')
 
-        multimatch = len(rows) > 1
+        multimatch = len(dbrows) > 1
 
         if bodyid is not None:
-            rows = [row for row in rows if row[4] == bodyid or row[4] is None]
+            dbrows = [row for row in dbrows if row[4] == bodyid or row[4] is None]
 
-        if len(rows) > 1 and name == sysname:
+        if len(dbrows) > 1 and name == sysname:
             if 'PlanetClass' in body:
-                rows = [row for row in rows if row[5] == 'PlanetaryBody']
+                dbrows = [row for row in dbrows if row[5] == 'PlanetaryBody']
             elif 'StarType' in body:
-                rows = [row for row in rows if row[5] == 'StellarBody']
+                dbrows = [row for row in dbrows if row[5] == 'StellarBody']
 
         if multimatch and 'Periapsis' in body:
             aop = body['Periapsis']
-            if len(rows) == 1 and rows[0][6] is None:
+            if len(dbrows) == 1 and dbrows[0][6] is None:
                 pass
-            elif len(rows) > 1:
-                rows = [row for row in rows if row[6] is None or ((aop + 725 - row[6]) % 360) < 10]
+            elif len(dbrows) > 1:
+                dbrows = [row for row in dbrows if row[6] is None or ((aop + 725 - row[6]) % 360) < 10]
 
-        if len(rows) > 1:
-            xrows = [row for row in rows if row[7] < timestamp < row[8]]
+        if len(dbrows) > 1:
+            xrows = [row for row in dbrows if row[7] < timestamp < row[8]]
             if len(xrows) > 0:
-                rows = xrows
+                dbrows = xrows
 
-        if len(rows) > 1:
-            xrows = [row for row in rows if row[9]]
+        if len(dbrows) > 1:
+            xrows = [row for row in dbrows if row[9]]
             if len(xrows) > 0:
-                rows = xrows
+                dbrows = xrows
 
         timer.time('bodyqueryname')
-        if len(rows) == 1:
-            row = rows[0]
-            if row[4] is None and bodyid is not None:
-                sqlqueries.set_body_bodyid(self.conn, (bodyid, row[0]))
+        if len(dbrows) == 1:
+            dbrow = dbrows[0]
+            if dbrow[4] is None and bodyid is not None:
+                sqlqueries.set_body_bodyid(self.conn, (bodyid, dbrow[0]))
                 timer.time('bodyupdateid')
             return (
                 EDDNBody(
-                    row[0],
+                    dbrow[0],
                     name,
                     sysname,
                     system.id,
-                    row[4] or bodyid,
-                    row[10],
+                    dbrow[4] or bodyid,
+                    dbrow[10],
                     (body['Periapsis'] if 'Periapsis' in body else None),
                     constants.timestamp_base_date,
                     constants.timestamp_max_date,
                     False,
-                    row[11]
+                    dbrow[11]
                 ),
                 None,
                 None
             )
-        elif len(rows) > 1:
+        elif len(dbrows) > 1:
             return (
                 None,
                 'Multiple body matches',
@@ -1647,11 +1682,11 @@ class EDDNSysDB(object):
                     'validFrom': row[7].isoformat(),
                     'validUntil': row[8].isoformat(),
                     'isRejected': True if row[9] else False
-                } for row in rows]
+                } for row in dbrows]
             )
         else:
-            allrows = sqlqueries.get_system_bodies(self.conn, (system.id, 1))
-            allrows += sqlqueries.get_system_bodies(self.conn, (system.id, 0))
+            allrows = list(sqlqueries.get_system_bodies(self.conn, (system.id, 1)))
+            allrows.append(sqlqueries.get_system_bodies(self.conn, (system.id, 0)))
             frows = [r for r in allrows if r[1].lower() == name.lower()]
 
             if bodyid is not None:
@@ -1660,8 +1695,6 @@ class EDDNSysDB(object):
             if len(frows) > 0:
                 if sysname in self.namedsystems:
                     systems = self.namedsystems[sysname]
-                    if type(systems) is not list:
-                        systems = [systems]
                     for xsystem in systems:
                         allrows += sqlqueries.get_system_bodies(self.conn, (xsystem.id, 1))
                         allrows += sqlqueries.get_system_bodies(self.conn, (xsystem.id, 0))
@@ -1683,7 +1716,7 @@ class EDDNSysDB(object):
                         'validFrom': row[7].isoformat(),
                         'validUntil': row[8].isoformat(),
                         'isRejected': True if row[9] else False
-                    } for row in rows]
+                    } for row in dbrows]
                 )
 
             if ispgname and desigid is not None:
@@ -1711,7 +1744,7 @@ class EDDNSysDB(object):
                 )
 
             if (not ispgname and constants.procgen_sysname_re.match(name)) or desigid is None:
-                allrows = sqlqueries.get_bodies_by_custom_name(self.conn, (name,))
+                allrows = list(sqlqueries.get_bodies_by_custom_name(self.conn, (name,)))
                 pgsysbodymatch = constants.procgen_sys_body_name_re.match(name)
                 dupsystems = []
 
@@ -1741,7 +1774,7 @@ class EDDNSysDB(object):
                             'validFrom': row[7].isoformat(),
                             'validUntil': row[8].isoformat(),
                             'isRejected': True if row[9] else False
-                        } for row in rows]
+                        } for row in dbrows]
                     )
                 elif pgsysbodymatch:
                     if len(dupsystems) > 0:
@@ -1807,8 +1840,6 @@ class EDDNSysDB(object):
 
         if name in self.factions:
             factions = self.factions[name]
-            if type(factions) is not list:
-                factions = [factions]
             for faction in factions:
                 if faction.government == government and (allegiance is None or faction.allegiance == allegiance):
                     return faction
@@ -1820,12 +1851,9 @@ class EDDNSysDB(object):
         faction = EDDNFaction(factionid, name, government, allegiance)
 
         if factions is None:
-            self.factions[name] = faction
-        elif type(self.factions[name]) is not list:
-            self.factions[name] = [self.factions[name]]
-            self.factions[name].append(faction)
+            self.factions[name] = factions = [faction]
         else:
-            self.factions[name].append(faction)
+            factions.append(faction)
 
         return faction
 
@@ -1856,7 +1884,7 @@ class EDDNSysDB(object):
             return None
 
     def findedsmsysid(self, edsmid: int)\
-            -> Union[Tuple[int, int, bool, Optional[NPTypeEDDBSystem]], Tuple[None, None, None, None]]:
+            -> Union[Tuple[int, int, bool, Any], Tuple[None, None, None, None]]:
         if self.edsmsysids is not None and len(self.edsmsysids) > edsmid:
             row = self.edsmsysids[edsmid]
 
@@ -1872,7 +1900,7 @@ class EDDNSysDB(object):
 
     def findedsmbodyid(self, edsmid: int)\
             -> Union[Tuple[int, int, Optional[NPTypeEDSMBody]], Tuple[None, None, None]]:
-        if self.edsmbodyids is not None and len(self.edsmbodyids) > edsmid:
+        if len(self.edsmbodyids) > edsmid:
             row = self.edsmbodyids[edsmid]
 
             if row[0] != 0:
@@ -1936,14 +1964,14 @@ class EDDNSysDB(object):
             return None
 
     def updateedsmbodyid(self, bodyid: int, edsmid: int, ts: datetime):
-        ts = int((ts - constants.timestamp_base_date).total_seconds())
+        tssec = int((ts - constants.timestamp_base_date).total_seconds())
         sqlqueries.upsert_edsm_body(self.conn, (edsmid, bodyid, ts, bodyid, ts))
 
         if edsmid < len(self.edsmbodyids):
             rec = self.edsmbodyids[edsmid]
             rec[0] = bodyid
             rec[1] = edsmid
-            rec[2] = ts
+            rec[2] = tssec
             return rec
         else:
             return None
@@ -1952,7 +1980,7 @@ class EDDNSysDB(object):
         sqlqueries.upsert_edsm_station(self.conn, (edsmid, stationid, ts, stationid, ts))
 
     def findeddbsysid(self, eddbid: int):
-        if self.eddbsysids is not None and len(self.eddbsysids) > eddbid:
+        if len(self.eddbsysids) > eddbid:
             row = self.eddbsysids[eddbid]
 
             if row[0] != 0:
@@ -1974,7 +2002,8 @@ class EDDNSysDB(object):
 
     def addfilelineinfo(self,
                         linelist: List[Tuple[
-                            int, int, datetime, datetime, int, int, int, int, float, bool, bool, bool
+                            int, int, datetime, datetime, int, int,
+                            int, int, float, int, int, int
                         ]]):
         sqlqueries.insert_file_line_info(self.conn, linelist)
 
@@ -1984,28 +2013,28 @@ class EDDNSysDB(object):
 
     def addfilelineroutesystems(self, linelist: List[Tuple[int, int, EDDNSystem, int]]):
         values = [(fileid, lineno, system.id, entrynum) for fileid, lineno, system, entrynum in linelist]
-        sqlqueries.query_insert_file_line_route_systems(self.conn, values)
+        sqlqueries.insert_file_line_route_systems(self.conn, values)
 
     def addedsmfilelinebodies(self, linelist: List[Tuple[int, int, int]]):
         values = [(fileid, lineno, edsmbodyid) for fileid, lineno, edsmbodyid in linelist]
-        sqlqueries.query_insert_edsm_file_line_systems(self.conn, values)
+        sqlqueries.insert_edsm_file_line_systems(self.conn, values)
 
     def getstationfilelines(self, fileid: int):
         rows = sqlqueries.get_file_line_stations_by_file(self.conn, (fileid,))
         return {row[0]: row[1] for row in rows}
 
     def getinfofilelines(self, fileid: int):
-        rows = sqlqueries.query_file_line_info_by_file(self.conn, (fileid,))
+        rows = sqlqueries.get_file_line_info_by_file(self.conn, (fileid,))
         return {row[0]: (row[1], row[2], row[3]) for row in rows}
 
     def getfactionfilelines(self, fileid: int):
         rows = sqlqueries.get_file_line_factions_by_file(self.conn, (fileid,))
 
-        lines = {}
+        lines: Dict[int, List[str]] = {}
         for row in rows:
             if row[0] not in lines:
                 lines[row[0]] = []
-            lines[row[0]] += [row[1]]
+            lines[row[0]].append(row[1])
 
         return lines
 

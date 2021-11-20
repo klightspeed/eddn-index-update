@@ -3,11 +3,11 @@ import os.path
 import sys
 import json
 import bz2
-from datetime import timedelta
-from typing import Callable
+from datetime import datetime, timedelta
+from typing import Callable, List, Tuple
 
 from ..config import Config
-from ..types import EDDNFile, Writable
+from ..types import EDDNFile, EDDNStation, Writable
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
 from ..timer import Timer
@@ -44,8 +44,11 @@ def process(sysdb: EDDNSysDB,
                 infolines = sysdb.getinfofilelines(fileinfo.id)
                 linecount = 0
                 totalsize = 0
-                stntoinsert = []
-                infotoinsert = []
+                stntoinsert: List[Tuple[int, int, EDDNStation]] = []
+                infotoinsert: List[Tuple[
+                    int, int, datetime, datetime, int, int,
+                    int, int, float, int, int, int
+                ]] = []
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     process_line(
@@ -105,17 +108,20 @@ def process(sysdb: EDDNSysDB,
         timer.time('commit')
 
 
-def process_line(sysdb,
-                 timer,
-                 fileinfo,
-                 reprocess,
-                 rejectout,
+def process_line(sysdb: EDDNSysDB,
+                 timer: Timer,
+                 fileinfo: EDDNFile,
+                 reprocess: bool,
+                 rejectout: Writable,
                  stnlines,
                  infolines,
-                 stntoinsert,
-                 infotoinsert,
-                 lineno,
-                 line
+                 stntoinsert: List[Tuple[int, int, EDDNStation]],
+                 infotoinsert: List[Tuple[
+                        int, int, datetime, datetime, int, int,
+                        int, int, float, int, int, int
+                    ]],
+                 lineno: int,
+                 line: bytes
                  ):
     if ((reprocess is True and (lineno + 1) not in stnlines)
             or (lineno + 1) not in infolines):
@@ -243,7 +249,13 @@ def process_station(sysdb,
         rejectout.write(json.dumps(msg) + '\n')
 
 
-def commit(sysdb, timer, stntoinsert, infotoinsert):
+def commit(sysdb: EDDNSysDB,
+           timer: Timer,
+           stntoinsert: List[Tuple[int, int, EDDNStation]],
+           infotoinsert: List[Tuple[
+                    int, int, datetime, datetime, int, int,
+                    int, int, float, int, int, int
+                ]]):
     sysdb.commit()
     if len(stntoinsert) != 0:
         sysdb.addfilelinestations(stntoinsert)

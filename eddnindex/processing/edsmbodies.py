@@ -3,7 +3,7 @@ import os.path
 import sys
 import json
 import bz2
-from typing import Callable
+from typing import Any, Callable
 
 from ..config import Config
 from ..types import EDSMFile, Writable
@@ -86,7 +86,7 @@ def process(sysdb: EDDNSysDB,
                             timer.time('parse')
                             reject = True
                             reject_reason = None
-                            reject_data = None
+                            reject_data: Any = None
                             (sysid, _, _, _) = sysdb.findedsmsysid(edsmsysid)
                             (sysbodyid, ts, rec) = sysdb.findedsmbodyid(edsmbodyid)
 

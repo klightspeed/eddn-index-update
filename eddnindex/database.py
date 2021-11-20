@@ -9,26 +9,26 @@ class DBCursor(Protocol):
 
     def execute(self,
                 command: str,
-                parameters: Union[Sequence, Mapping[str, Any], None] = None):
+                parameters: Sequence = None):
         ...
 
     def executemany(self,
                     command: str,
-                    parameters: Sequence[Union[Sequence, Mapping[str, Any]]]):
+                    parameters: Sequence[Sequence]):
         ...
 
-    def fetchone(self) -> Union[Sequence, Mapping[str, Any]]:
+    def fetchone(self) -> Sequence:
         ...
 
     def fetchmany(self,
                   size: int
-                  ) -> Sequence[Union[Sequence, Mapping[str, Any]]]:
+                  ) -> Sequence[Sequence]:
         ...
 
-    def fetchall(self) -> Sequence[Union[Sequence, Mapping[str, Any]]]:
+    def fetchall(self) -> Sequence[Sequence]:
         ...
 
-    def __iter__(self) -> Iterator[Union[Sequence, Mapping[str, Any]]]:
+    def __iter__(self) -> Iterator[Sequence]:
         ...
 
 
@@ -141,10 +141,9 @@ class DBConnection(object):
     def execute(self,
                 cursor: DBCursor,
                 query: Union[str, 'SQLQuery'],
-                params: Union[Sequence, Mapping, None]
+                params: Sequence = None
                 ) -> DBCursor:
         if isinstance(query, SQLQuery):
-            params = query.map_params(self, params)
             query_string = query.get_query(self)
         else:
             query_string = query
@@ -155,10 +154,9 @@ class DBConnection(object):
     def executemany(self,
                     cursor: DBCursor,
                     query: Union[str, 'SQLQuery'],
-                    params: Sequence[Union[Sequence, Mapping]]
+                    params: Sequence[Sequence]
                     ) -> DBCursor:
         if isinstance(query, SQLQuery):
-            params = query.map_params(self, params)
             query_string = query.get_query(self)
         else:
             query_string = query
@@ -169,10 +167,9 @@ class DBConnection(object):
     def execute_identity(self,
                          cursor: DBCursor,
                          query: Union[str, 'SQLQuery'],
-                         params: Union[Sequence, Mapping, None]
+                         params: Sequence
                          ) -> int:
         if isinstance(query, SQLQuery):
-            params = query.map_params(self, params)
             query_string = query.get_query(self)
             cursor.execute(query_string, params)
             return query.get_last_row_id(self, cursor)
@@ -226,8 +223,8 @@ class SQLQuery(object):
 
     def map_params(self,
                    conn: DBConnection,
-                   params: Union[Sequence, Mapping]
-                   ) -> Union[Sequence, Mapping]:
+                   params: Union[Sequence, Mapping, None]
+                   ) -> Union[Sequence, Mapping, None]:
         if self.param_map:
             return self.param_map(conn, params)
         elif (isinstance(params, Mapping)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import NamedTuple, Optional, TypedDict, Protocol
+from typing import List, NamedTuple, Optional, TypedDict, Protocol
 import numpy
 
 
@@ -18,7 +18,7 @@ class EDDNStation(NamedTuple):
     market_id: int
     name: str
     system_name: str
-    system_id: int
+    system_id: Optional[int]
     type: str
     type_location: str
     body: Optional[str]
@@ -121,6 +121,30 @@ class ProcessorArgs(Protocol):
     eddb_systems: bool
     eddb_stations: bool
     no_eddn: bool
+
+
+class KnownBody(TypedDict):
+    SystemAddress: int
+    SystemName: str
+    BodyID: int
+    BodyName: str
+    BodyDesignation: str
+    BodyDesignationId: int
+
+
+class RejectDataSystem(TypedDict):
+    id: int
+    id64: int
+    x: float
+    y: float
+    z: float
+    name: str
+
+
+class RejectData(TypedDict):
+    nameid64: Optional[int]
+    id64name: Optional[str]
+    systems: List[RejectDataSystem]
 
 
 DTypeEDSMSystem = numpy.dtype(

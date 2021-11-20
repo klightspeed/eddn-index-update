@@ -59,7 +59,7 @@ def modsysaddr_to_id64(modsysaddr: int) -> int:
 
 
 def from_db_string(name: Union[str, bytes]):
-    if type(name) is str:
-        return name
-    else:
+    if isinstance(name, bytes):
         return name.decode('utf-8')
+    else:
+        return name

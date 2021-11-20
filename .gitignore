@@ -136,3 +136,6 @@ edts/
 
 # Jetbrains
 .idea/
+
+# VS Code
+.vscode/

@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 
 try:
     from edts.edtslib.system import from_name
@@ -17,7 +17,7 @@ except ImportError:
 
 
 def find_edts_system_id64(sysname: str,
-                          sysaddr: int,
+                          sysaddr: Optional[int],
                           starpos: Union[Tuple[float, float, float],
                                          List[float],
                                          None

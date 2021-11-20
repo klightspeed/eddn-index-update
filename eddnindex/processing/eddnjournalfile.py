@@ -4,11 +4,11 @@ import sys
 import json
 import bz2
 import math
-from datetime import timedelta
-from typing import Callable
+from datetime import datetime, timedelta
+from typing import Any, Callable, List, Tuple
 
 from ..config import Config
-from ..types import EDDNFile, Writable
+from ..types import EDDNFaction, EDDNFile, EDDNStation, Writable
 from .. import constants
 from constants import ed_3_0_3_date, ed_3_0_4_date
 from ..eddnsysdb import EDDNSysDB
@@ -71,9 +71,12 @@ def process(sysdb: EDDNSysDB,
                 stnlinecount = 0
                 totalsize = 0
                 timer.time('load')
-                stntoinsert = []
-                infotoinsert = []
-                factionstoinsert = []
+                stntoinsert: List[Tuple[int, int, EDDNStation]] = []
+                infotoinsert: List[Tuple[
+                    int, int, datetime, datetime, int, int,
+                    int, int, float, int, int, int
+                ]] = []
+                factionstoinsert: List[Tuple[int, int, EDDNFaction, int]] = []
                 for lineno, line in enumerate(f):
                     process_line(
                         sysdb,
@@ -139,11 +142,14 @@ def process(sysdb: EDDNSysDB,
                 )
 
 
-def commit(sysdb,
-           timer,
-           stntoinsert,
-           infotoinsert,
-           factionstoinsert
+def commit(sysdb: EDDNSysDB,
+           timer: Timer,
+           stntoinsert: List[Tuple[int, int, EDDNStation]],
+           infotoinsert: List[Tuple[
+                    int, int, datetime, datetime, int, int,
+                    int, int, float, int, int, int
+                ]],
+           factionstoinsert: List[Tuple[int, int, EDDNFaction, int]]
            ):
     sysdb.commit()
     if len(stntoinsert) != 0:
@@ -158,23 +164,26 @@ def commit(sysdb,
     sysdb.commit()
 
 
-def process_line(sysdb,
-                 timer,
-                 fileinfo,
-                 reprocessall,
-                 rejectout,
-                 config,
+def process_line(sysdb: EDDNSysDB,
+                 timer: Timer,
+                 fileinfo: EDDNFile,
+                 reprocessall: bool,
+                 rejectout: Writable,
+                 config: Config,
                  stnlines,
                  infolines,
                  factionlines,
-                 poplinecount,
-                 stnlinecount,
-                 stntoinsert,
-                 infotoinsert,
-                 factionstoinsert,
-                 lineno,
-                 line,
-                 event_type
+                 poplinecount: int,
+                 stnlinecount: int,
+                 stntoinsert: List[Tuple[int, int, EDDNStation]],
+                 infotoinsert: List[Tuple[
+                        int, int, datetime, datetime, int, int,
+                        int, int, float, int, int, int
+                    ]],
+                 factionstoinsert: List[Tuple[int, int, EDDNFaction, int]],
+                 lineno: int,
+                 line: bytes,
+                 event_type: str
                  ):
     if ((lineno + 1) not in infolines
             or (reprocessall is True and event_type == 'Scan')):
@@ -266,9 +275,21 @@ def process_line(sysdb,
                 rejectout.write(json.dumps(msg) + '\n')
 
 
-def process_event(sysdb, timer, fileinfo, reprocessall, rejectout,
-                  config, stnlines, infolines, factionlines,
-                  stntoinsert, infotoinsert, factionstoinsert,
+def process_event(sysdb: EDDNSysDB,
+                  timer: Timer,
+                  fileinfo: EDDNFile,
+                  reprocessall: bool,
+                  rejectout: Writable,
+                  config: Config,
+                  stnlines,
+                  infolines,
+                  factionlines,
+                  stntoinsert: List[Tuple[int, int, EDDNStation]],
+                  infotoinsert: List[Tuple[
+                        int, int, datetime, datetime, int, int,
+                        int, int, float, int, int, int
+                    ]],
+                  factionstoinsert: List[Tuple[int, int, EDDNFaction, int]],
                   lineno, msg, body, eventtype, sysname, starpos,
                   sysaddr, stationname, marketid, stationtype,
                   bodyname, bodyid, bodytype, scanbodyname, parents,
@@ -277,6 +298,8 @@ def process_event(sysdb, timer, fileinfo, reprocessall, rejectout,
                   sqltimestamp, sqlgwtimestamp, linelen
                   ):
     starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in starpos]
+    reject_data: Any
+
     (system, reject_reason, reject_data) = sysdb.getsystem(
         timer,
         sysname,
@@ -490,7 +513,7 @@ def process_event(sysdb, timer, fileinfo, reprocessall, rejectout,
                     )]
 
             if len(linefactions) != 0:
-                if len(fid for n, fid in linefactions if fid is None) != 0:
+                if len([fid for n, fid in linefactions if fid is None]) != 0:
                     reject = True
                     reject_reason = 'Faction not found'
                     reject_data = linefactiondata
@@ -512,7 +535,7 @@ def process_event(sysdb, timer, fileinfo, reprocessall, rejectout,
         else:
             if (lineno + 1) not in infolines:
                 sysdb.insertsoftware(software)
-                infotoinsert += [(
+                infotoinsert.append((
                     fileinfo.id,
                     lineno + 1,
                     sqltimestamp,
@@ -525,7 +548,7 @@ def process_event(sysdb, timer, fileinfo, reprocessall, rejectout,
                     1 if 'BodyID' in body else 0,
                     1 if 'SystemAddress' in body else 0,
                     1 if 'MarketID' in body else 0
-                )]
+                ))
 
     else:
         msg['rejectReason'] = reject_reason

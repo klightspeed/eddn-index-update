@@ -3,7 +3,7 @@ import json
 import bz2
 import math
 import csv
-from typing import Callable
+from typing import Any, Callable, Dict
 
 from ..config import Config
 from ..types import Writable
@@ -23,6 +23,7 @@ def process(sysdb: EDDNSysDB,
         w = 0
         for i, msg in enumerate(csvreader):
             timer.time('read')
+            rejectmsg: Dict[str, Any]
             try:
                 eddbsysid = int(msg['id'])
                 sysname = msg['name']

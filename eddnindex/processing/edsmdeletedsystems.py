@@ -1,5 +1,5 @@
 import sys
-from typing import Callable
+from typing import Callable, List, Optional
 import urllib.request
 import urllib.error
 import json
@@ -24,6 +24,9 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB,
            '&showId=1'
            '&submitted=1'
            '&includeHidden=1')
+    
+    starpos: Optional[List[float]]
+    
     try:
         while True:
             try:
@@ -102,7 +105,7 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB,
         timer.time('edsmupdate')
 
         if rec is not None:
-            rec.processed = 7
+            rec[6] = 7
 
         return True
 

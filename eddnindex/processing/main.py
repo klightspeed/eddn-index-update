@@ -2,7 +2,7 @@ import sys
 from typing import Callable
 
 from ..config import Config
-from ..types import ProcessorArgs
+from ..types import ProcessorArgs, Writable
 from ..eddnsysdb import EDDNSysDB
 from ..database import DBConnection
 from ..timer import Timer
@@ -50,6 +50,8 @@ def main(args: ProcessorArgs,
     )
 
     timer.time('init')
+
+    reject_file: Writable
 
     if not args.no_eddn:
         reject_file = EDDNRejectData(config.eddn_reject_dir)

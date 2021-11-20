@@ -1,4 +1,4 @@
-from typing import Union, Callable, Optional
+from typing import Generic, TypeVar, Union, Callable, Optional
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from .database import DBConnection, DBCursor, SQLQuery
@@ -25,17 +25,81 @@ def sql_query_identity(cmd_and_cols: str,
     )
 
 
+class SQLQueryUpsert(object):
+    update_query: SQLQuery
+    insert_query: SQLQuery
+
+    def __init__(self,
+                 update_query: SQLQuery,
+                 insert_query: SQLQuery
+                 ):
+        self.update_query = update_query
+        self.insert_query = insert_query
+    
+    def __call__(self,
+                 conn: DBConnection,
+                 params: Sequence
+                 ):
+        cursor = conn.cursor()
+        conn.execute(cursor, self.update_query, params)
+        if cursor.rowcount == 0:
+            conn.execute(cursor, self.insert_query, params)
+
+
+T = TypeVar('T')
+U = TypeVar('U')
+
+
+class SQLQueryExec(Generic[T, U]):
+    query: SQLQuery
+
+    def __init__(self,
+                 query: SQLQuery,
+                 executor: Callable[
+                     [DBConnection, SQLQuery, Optional[T]],
+                     U]
+                 ):
+        self.query = query
+        self.executor = executor
+    
+    def __call__(self,
+                 conn: DBConnection,
+                 params: T = None
+                 ) -> U:
+        executor = self.executor
+        return executor(conn, self.query, params)
+
+
+class SQLQueryExecParamRequired(Generic[T, U]):
+    query: SQLQuery
+
+    def __init__(self,
+                 query: SQLQuery,
+                 executor: Callable[
+                     [DBConnection, SQLQuery, T],
+                     U]
+                 ):
+        self.query = query
+        self.executor = executor
+    
+    def __call__(self,
+                 conn: DBConnection,
+                 params: T
+                 ) -> U:
+        return self.executor(conn, self.query, params)
+
+
 def execute(conn: DBConnection,
-            query: Union[str, SQLQuery],
-            params: Union[Sequence, Mapping] = None
+            query: SQLQuery,
+            params: Sequence
             ) -> None:
     cursor = conn.cursor()
     conn.execute(cursor, query, params)
 
 
 def executemany(conn: DBConnection,
-                query: Union[str, SQLQuery],
-                params: Sequence[Union[Sequence, Mapping]]
+                query: SQLQuery,
+                params: Sequence[Sequence]
                 ) -> None:
     cursor = conn.cursor()
     conn.executemany(cursor, query, params)
@@ -43,7 +107,7 @@ def executemany(conn: DBConnection,
 
 def execute_identity(conn: DBConnection,
                      query: SQLQuery,
-                     params: Union[Sequence, Mapping, None] = None
+                     params: Sequence
                      ) -> int:
     cursor = conn.cursor()
     return conn.execute_identity(cursor, query, params)
@@ -52,7 +116,7 @@ def execute_identity(conn: DBConnection,
 def execute_upsert(conn: DBConnection,
                    update_query: SQLQuery,
                    insert_query: SQLQuery,
-                   params: Union[Sequence, Mapping, None] = None
+                   params: Sequence = None
                    ) -> None:
     cursor = conn.cursor()
     conn.execute(cursor, update_query, params)
@@ -61,8 +125,8 @@ def execute_upsert(conn: DBConnection,
 
 
 def fetch_scalar(conn: DBConnection,
-                 query: Union[str, SQLQuery],
-                 params: Union[Sequence, Mapping, None] = None
+                 query: SQLQuery,
+                 params: Sequence = None
                  ) -> Union[int, float, bool, str, bytes, datetime, None]:
     cursor = conn.cursor()
     conn.execute(cursor, query, params)
@@ -71,8 +135,8 @@ def fetch_scalar(conn: DBConnection,
 
 
 def fetch_scalar_int(conn: DBConnection,
-                     query: Union[str, SQLQuery],
-                     params: Union[Sequence, Mapping] = None
+                     query: SQLQuery,
+                     params: Sequence = None
                      ) -> Union[int, None]:
     cursor = conn.cursor()
     conn.execute(cursor, query, params)
@@ -81,119 +145,136 @@ def fetch_scalar_int(conn: DBConnection,
 
 
 def fetch_one(conn: DBConnection,
-              query: Union[str, SQLQuery],
-              params: Union[Sequence, Mapping, None] = None
-              ) -> Union[Sequence, Mapping, None]:
+              query: SQLQuery,
+              params: Sequence = None
+              ) -> Optional[Sequence]:
     cursor = conn.cursor()
     conn.execute(cursor, query, params)
     return cursor.fetchone()
 
 
 def fetch_all(conn: DBConnection,
-              query: Union[str, SQLQuery],
-              params: Union[Sequence, Mapping, None] = None
-              ) -> Sequence[Union[Sequence, Mapping]]:
+              query: SQLQuery,
+              params: Sequence = None
+              ) -> Sequence[Sequence]:
     cursor = conn.cursor()
     conn.execute(cursor, query, params)
     return cursor.fetchall()
 
 
 def fetch_streaming(conn: DBConnection,
-                    query: Union[str, SQLQuery],
-                    params: Union[Sequence, Mapping, None] = None
+                    query: SQLQuery,
+                    params: Sequence = None
                     ) -> DBCursor:
     cursor = conn.cursor(streaming=True)
     conn.execute(cursor, query, params)
     return cursor
 
 
-def execute_partial(query: Union[str, SQLQuery]) \
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]], None]:
-    return lambda conn, params: execute(conn, query, params)
+def execute_partial(query: SQLQuery) \
+        -> Callable[[DBConnection, Sequence], None]:
+    return SQLQueryExecParamRequired(
+        query, execute
+    )
 
 
-def executemany_partial(query: Union[str, SQLQuery]) \
+def executemany_partial(query: SQLQuery) \
         -> Callable[
-                [DBConnection, Sequence[Union[Sequence, Mapping]]],
+                [DBConnection, Sequence[Sequence]],
                 None
            ]:
-    return lambda conn, params: executemany(conn, query, params)
+    return SQLQueryExecParamRequired(
+        query,
+        executemany
+    )
 
 
 def execute_identity_partial(query: SQLQuery) \
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]], int]:
-    return lambda conn, params: execute_identity(conn, query, params)
+        -> Callable[[DBConnection, Sequence], int]:
+    return SQLQueryExecParamRequired(
+        query,
+        execute_identity
+    )
 
 
 def execute_upsert_partial(update_query: SQLQuery, insert_query: SQLQuery) \
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]], None]:
-    return lambda conn, params: execute_upsert(
-        conn,
+        -> Callable[[DBConnection, Sequence], None]:
+    return SQLQueryUpsert(
         update_query,
-        insert_query,
-        params
+        insert_query
     )
 
 
-def fetch_scalar_partial(query: Union[str, SQLQuery])\
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]],
+def fetch_scalar_partial(query: SQLQuery)\
+        -> Callable[[DBConnection, Optional[Sequence]],
                     Union[int, float, bool, str, bytes, datetime, None]]:
-    return lambda conn, params: fetch_scalar(
-        conn,
+    return SQLQueryExec(
         query,
-        params
+        fetch_scalar
     )
 
 
-def fetch_scalar_int_partial(query: Union[str, SQLQuery])\
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]],
+def fetch_scalar_int_partial(query: SQLQuery)\
+        -> Callable[[DBConnection, Optional[Sequence]],
                     Union[int, None]]:
-    return lambda conn, params: fetch_scalar_int(conn, query, params)
+    return SQLQueryExec(
+        query,
+        fetch_scalar_int
+    )
 
 
-def fetch_one_partial(query: Union[str, SQLQuery]) \
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]],
-                    Union[Sequence, Mapping, None]]:
-    return lambda conn, params: fetch_one(conn, query, params)
+def fetch_one_partial(query: SQLQuery) \
+        -> Callable[[DBConnection, Optional[Sequence]],
+                    Optional[Sequence]]:
+    return SQLQueryExec(
+        query,
+        fetch_one
+    )
 
 
-def fetch_all_partial(query: Union[str, SQLQuery]) \
-        -> Callable[[DBConnection, Union[Sequence, Mapping, None]],
-                    Sequence[Union[Sequence, Mapping]]]:
-    return lambda conn, params: fetch_all(conn, query, params)
+def fetch_all_partial(query: SQLQuery) \
+        -> Callable[[DBConnection, Optional[Sequence]],
+                    Sequence[Sequence]]:
+    return SQLQueryExec(
+        query,
+        fetch_all
+    )
 
 
-def fetch_streaming_partial(query: Union[str, SQLQuery]) \
+def fetch_streaming_partial(query: SQLQuery) \
         -> Callable[[DBConnection, Optional[Sequence]], DBCursor]:
-    return lambda conn, params: fetch_streaming(conn, query, params)
+    return SQLQueryExec(
+        query,
+        fetch_streaming
+    )
 
 
 # region Scalar Select Statements
 
-query_max_edsm_system_id = '''
+query_max_edsm_system_id = SQLQuery('''
     SELECT
         MAX(EdsmId)
     FROM Systems_EDSM
-'''
+''')
 
-query_max_eddb_system_id = '''
+query_max_eddb_system_id = SQLQuery('''
     SELECT
         MAX(EddbId)
     FROM Systems_EDDB
-'''
+''')
 
-query_max_edsm_body_id = '''
+query_max_edsm_body_id = SQLQuery('''
     SELECT
         MAX(EdsmId)
     FROM SystemBodies_EDSM
-'''
+''')
 
-query_max_edsm_body_file_lineno = '''
+query_max_edsm_body_file_lineno = SQLQuery('''
     SELECT
         MAX(LineNo)
     FROM EDSMFileLineBodies
     WHERE FileId = %s
-'''
+''')
 
 # endregion
 
@@ -219,16 +300,16 @@ get_max_edsm_body_file_lineno = fetch_scalar_int_partial(
 
 # region Singleton Select Statements
 
-query_body_designation = '''
+query_body_designation = SQLQuery('''
     SELECT
         Id,
         BodyDesignation,
         BodyCategory
     FROM SystemBodyDesignations
     WHERE BodyDesignation = %s
-'''
+''')
 
-query_system_by_id = '''
+query_system_by_id = SQLQuery('''
     SELECT
         ns.Id,
         ns.SystemAddress,
@@ -238,32 +319,32 @@ query_system_by_id = '''
         ns.Z
     FROM SystemNames ns
     WHERE Id = %s'
-'''
+''')
 
-query_system_by_edsm_id = '''
+query_system_by_edsm_id = SQLQuery('''
     SELECT
         Id,
         TimestampSeconds,
         HasCoords
     FROM Systems_EDSM
     WHERE EdsmId = %s
-'''
+''')
 
-query_body_by_edsm_id = '''
+query_body_by_edsm_id = SQLQuery('''
     SELECT
         Id,
         TimestampSeconds
     FROM SystemBodies_EDSM
     WHERE EdsmId = %s
-'''
+''')
 
-query_system_by_eddb_id = '''
+query_system_by_eddb_id = SQLQuery('''
     SELECT
         Id,
         TimestampSeconds
     FROM Systems_EDDB
     WHERE EddbId = %s
-'''
+''')
 
 # endregion
 
@@ -293,7 +374,7 @@ get_system_by_eddb_id = fetch_one_partial(
 
 # region Streaming Select Statements
 
-query_edsm_systems = '''
+query_edsm_systems = SQLQuery('''
     SELECT
         Id,
         EdsmId,
@@ -302,65 +383,65 @@ query_edsm_systems = '''
         IsHidden,
         IsDeleted
     FROM Systems_EDSM
-'''
+''')
 
-query_eddb_systems = '''
+query_eddb_systems = SQLQuery('''
     SELECT
         Id,
         EddbId,
         TimestampSeconds
     FROM Systems_EDDB
-'''
+''')
 
-query_edsm_bodies = '''
+query_edsm_bodies = SQLQuery('''
     SELECT
         Id,
         EdsmId,
         TimestampSeconds
     FROM SystemBodies_EDSM
-'''
+''')
 
-query_edsm_body_file_lines_by_file = '''
+query_edsm_body_file_lines_by_file = SQLQuery('''
     SELECT
         LineNo,
         EdsmBodyId
     FROM EDSMFileLineBodies
     WHERE FileId = %s
-'''
+''')
 
-query_station_file_line_counts = '''
+query_station_file_line_counts = SQLQuery('''
     SELECT
         FileId,
         COUNT(LineNo)
     FROM FileLineStations
     GROUP BY FileId
-'''
+''')
 
-query_info_file_line_counts = '''
+query_info_file_line_counts = SQLQuery('''
     SELECT
         FileId,
         COUNT(LineNo)
     FROM FileLineInfo
     GROUP BY FileId
-'''
+''')
 
-query_faction_file_line_counts = '''
+query_faction_file_line_counts = SQLQuery('''
     SELECT
         FileId,
         COUNT(DISTINCT LineNo)
     FROM FileLineFactions
     GROUP BY FileId
-'''
+''')
 
-query_route_file_line_counts = '''
+query_route_file_line_counts = SQLQuery('''
     SELECT
         FileId,
         COUNT(*)
     FROM FileLineNavRoutes
     GROUP BY FileId
-'''
+''')
 
-query_files = '''
+query_files = SQLQuery('''
     SELECT
         Id,
         FileName,
@@ -372,16 +453,16 @@ query_files = '''
         NavRouteSystemCount,
         IsTest
     FROM Files f
-'''
+''')
 
-query_edsm_body_file_line_counts = '''
+query_edsm_body_file_line_counts = SQLQuery('''
     SELECT FileId, COUNT(LineNo)
     FROM EDSMFileLineBodies flb
     JOIN SystemBodies_EDSM sb ON sb.EdsmId = flb.EdsmBodyId
     GROUP BY FileId
-'''
+''')
 
-query_edsm_files = '''
+query_edsm_files = SQLQuery('''
     SELECT
         Id,
         FileName,
@@ -390,7 +471,7 @@ query_edsm_files = '''
         CompressedSize
     FROM EDSMFiles f
     ORDER BY Date
-'''
+''')
 
 # endregion
 
@@ -444,31 +525,31 @@ get_edsm_files = fetch_streaming_partial(
 
 # region FetchAll Select Statements
 
-query_parent_sets = '''
+query_parent_sets = SQLQuery('''
     SELECT
         Id,
         BodyID,
         ParentJson
     FROM ParentSets
-'''
+''')
 
-query_software = '''
+query_software = SQLQuery('''
     SELECT
         Id,
         Name
     FROM Software
-'''
+''')
 
-query_body_designations = '''
+query_body_designations = SQLQuery('''
     SELECT
         Id,
         BodyDesignation,
         BodyCategory
     FROM SystemBodyDesignations
     WHERE IsUsed = 1
-'''
+''')
 
-query_regions = '''
+query_regions = SQLQuery('''
     SELECT
         Id,
         Name,
@@ -481,26 +562,26 @@ query_regions = '''
         RegionAddress,
         IsHARegion
     FROM Regions
-'''
+''')
 
-query_factions = '''
+query_factions = SQLQuery('''
     SELECT
         Id,
         Name,
         Government,
         Allegiance
     FROM Factions
-'''
+''')
 
-query_file_line_stations_by_file = '''
+query_file_line_stations_by_file = SQLQuery('''
     SELECT
         LineNo,
         StationId
     FROM FileLineStations
     WHERE FileId = %s
-'''
+''')
 
-query_file_line_info_by_file = '''
+query_file_line_info_by_file = SQLQuery('''
     SELECT
         LineNo,
         Timestamp,
@@ -508,26 +589,26 @@ query_file_line_info_by_file = '''
         BodyId
     FROM FileLineInfo
     WHERE FileId = %s
-'''
+''')
 
-query_file_line_factions_by_file = '''
+query_file_line_factions_by_file = SQLQuery('''
     SELECT
         LineNo,
         FactionId
     FROM FileLineFactions
     WHERE FileId = %s
-'''
+''')
 
-query_file_line_routes_by_file = '''
+query_file_line_routes_by_file = SQLQuery('''
     SELECT
         LineNo,
         EntryNum,
         SystemId
     FROM FileLineNavRoutes
     WHERE FileId = %s
-'''
+''')
 
-query_named_bodies = '''
+query_named_bodies = SQLQuery('''
     SELECT
         nb.Id,
         nb.BodyName,
@@ -542,9 +623,9 @@ query_named_bodies = '''
         nb.BodyDesignationId
     FROM SystemBodyNames nb
     JOIN SystemBodies_Named sbn ON sbn.Id = nb.Id
-'''
+''')
 
-query_named_systems = '''
+query_named_systems = SQLQuery('''
     SELECT
         ns.Id,
         ns.SystemAddress,
@@ -554,9 +635,9 @@ query_named_systems = '''
         ns.Z
     FROM SystemNames ns
     JOIN Systems_Named sn ON sn.Id = ns.Id
-'''
+''')
 
-query_systems_by_modsysaddr = '''
+query_systems_by_modsysaddr = SQLQuery('''
     SELECT
         ns.Id,
         ns.SystemAddress,
@@ -566,9 +647,9 @@ query_systems_by_modsysaddr = '''
         ns.Z
     FROM SystemNames ns
     WHERE ModSystemAddress = %s
-'''
+''')
 
-query_systems_by_name = '''
+query_systems_by_name = SQLQuery('''
     SELECT
         ns.Id,
         ns.SystemAddress,
@@ -579,9 +660,9 @@ query_systems_by_name = '''
     FROM SystemNames ns
     JOIN Systems_Named sn ON sn.Id = ns.Id
     WHERE sn.Name = %s
-'''
+''')
 
-query_find_systems_in_boxel = '''
+query_find_systems_in_boxel = SQLQuery('''
     SELECT
         ns.Id,
         ns.SystemAddress,
@@ -592,9 +673,9 @@ query_find_systems_in_boxel = '''
     FROM SystemNames ns
     WHERE ModSystemAddress >= %s
     AND ModSystemAddress < %s
-'''
+''')
 
-query_find_stations = '''
+query_find_stations = SQLQuery('''
     SELECT
         Id,
         MarketId,
@@ -613,9 +694,9 @@ query_find_stations = '''
     WHERE SystemName = %s
     AND StationName = %s
     ORDER BY ValidUntil - ValidFrom
-'''
+''')
 
-query_bodies_by_name = '''
+query_bodies_by_name = SQLQuery('''
     SELECT
         Id,
         BodyName,
@@ -633,9 +714,9 @@ query_bodies_by_name = '''
     WHERE SystemId = %s
     AND BodyName = %s
     AND IsNamedBody = %s
-'''
+''')
 
-query_system_bodies = '''
+query_system_bodies = SQLQuery('''
     SELECT
         Id,
         BodyName,
@@ -651,9 +732,9 @@ query_system_bodies = '''
         BodyDesignationId
     FROM SystemBodyNames sn
     WHERE SystemId = %s AND IsNamedBody = %s
-'''
+''')
 
-query_bodies_by_custom_name = '''
+query_bodies_by_custom_name = SQLQuery('''
     SELECT
         Id,
         BodyName,
@@ -669,7 +750,7 @@ query_bodies_by_custom_name = '''
         BodyDesignationId
     FROM SystemBodyNames sb
     WHERE sb.CustomName = %s
-'''
+''')
 
 # endregion
 
@@ -751,28 +832,28 @@ get_bodies_by_custom_name = fetch_all_partial(
 
 # region Update Statements
 
-query_update_body_designation_used = '''
+query_update_body_designation_used = SQLQuery('''
     UPDATE SystemBodyDesignations SET
         IsUsed = 1
     WHERE Id = %s
-'''
+''')
 
-query_update_system_coords = '''
+query_update_system_coords = SQLQuery('''
     UPDATE Systems SET
         X = %s,
         Y = %s,
         Z = %s
     WHERE Id = %s
-'''
+''')
 
-query_update_body_bodyid = '''
+query_update_body_bodyid = SQLQuery('''
     UPDATE SystemBodies SET
         HasBodyId = 1,
         BodyID = %s
     WHERE Id = %s
-'''
+''')
 
-query_update_station = '''
+query_update_station = SQLQuery('''
     UPDATE Stations SET
         MarketId = %s,
         SystemId = %s,
@@ -780,9 +861,9 @@ query_update_station = '''
         Body = %s,
         BodyID = %s
     WHERE Id = %s
-'''
+''')
 
-query_update_file_info = '''
+query_update_file_info = SQLQuery('''
     UPDATE Files SET
         LineCount = %s,
         CompressedSize = %s,
@@ -791,15 +872,15 @@ query_update_file_info = '''
         StationLineCount = %s,
         NavRouteSystemCount = %s
     WHERE Id = %s
-'''
+''')
 
-query_update_edsm_file_info = '''
+query_update_edsm_file_info = SQLQuery('''
     UPDATE EDSMFiles SET
         LineCount = %s,
         CompressedSize = %s,
         UncompressedSize = %s
     WHERE Id = %s
-'''
+''')
 
 # endregion
 
@@ -986,7 +1067,7 @@ insert_faction = execute_identity_partial(
 
 # region Bulk Insert Statements
 
-query_insert_file_line_info = '''
+query_insert_file_line_info = SQLQuery('''
     INSERT INTO FileLineInfo (
         FileId,
         LineNo,
@@ -1016,9 +1097,9 @@ query_insert_file_line_info = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_file_line_factions = '''
+query_insert_file_line_factions = SQLQuery('''
     INSERT INTO FileLineFactions (
         FileId,
         LineNo,
@@ -1032,9 +1113,9 @@ query_insert_file_line_factions = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_file_line_route_systems = '''
+query_insert_file_line_route_systems = SQLQuery('''
     INSERT INTO FileLineNavRoutes (
         FileId,
         LineNo,
@@ -1048,9 +1129,9 @@ query_insert_file_line_route_systems = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_edsm_file_line_systems = '''
+query_insert_edsm_file_line_systems = SQLQuery('''
     INSERT INTO EDSMFileLineBodies (
         FileId,
         LineNo,
@@ -1062,7 +1143,7 @@ query_insert_edsm_file_line_systems = '''
         %s,
         %s
     )
-'''
+''')
 
 # endregion
 
@@ -1092,7 +1173,7 @@ insert_edsm_file_line_systems = executemany_partial(
 
 # region Insert Statements
 
-query_insert_sphere_sector_system = '''
+query_insert_sphere_sector_system = SQLQuery('''
     INSERT INTO Systems_HASector (
         Id,
         ModSystemAddress,
@@ -1116,9 +1197,9 @@ query_insert_sphere_sector_system = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_named_system = '''
+query_insert_named_system = SQLQuery('''
     INSERT INTO Systems_Named (
         Id,
         Name
@@ -1128,9 +1209,9 @@ query_insert_named_system = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_system_invalid = '''
+query_insert_system_invalid = SQLQuery('''
     INSERT INTO Systems_Validity (
         Id,
         IsRejected
@@ -1140,9 +1221,9 @@ query_insert_system_invalid = '''
         %s,
         1
     )
-'''
+''')
 
-query_insert_parent_set_link = '''
+query_insert_parent_set_link = SQLQuery('''
     INSERT IGNORE INTO SystemBodies_ParentSet (
         Id,
         ParentSetId
@@ -1152,9 +1233,9 @@ query_insert_parent_set_link = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_named_body = '''
+query_insert_named_body = SQLQuery('''
     INSERT INTO SystemBodies_Named (
         Id,
         SystemId,
@@ -1166,9 +1247,9 @@ query_insert_named_body = '''
         %s,
         %s
     )
-'''
+''')
 
-query_insert_body_invalid = '''
+query_insert_body_invalid = SQLQuery('''
     INSERT INTO SystemBodies_Validity (
         Id,
         IsRejected
@@ -1178,7 +1259,7 @@ query_insert_body_invalid = '''
         %s,
         1
     )
-'''
+''')
 
 # endregion
 

@@ -4,11 +4,11 @@ import sys
 import json
 import bz2
 import math
-from datetime import timedelta
-from typing import Callable
+from datetime import datetime, timedelta
+from typing import Callable, List, Tuple
 
 from ..config import Config
-from ..types import EDDNFile, Writable
+from ..types import EDDNFile, EDDNSystem, Writable
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
 from ..timer import Timer
@@ -56,8 +56,13 @@ def process(sysdb: EDDNSysDB,
                 routesystemcount = 0
                 totalsize = 0
                 timer.time('load')
-                infotoinsert = []
-                routesystemstoinsert = []
+                infotoinsert: List[Tuple[
+                    int, int, datetime, datetime, int, int,
+                    int, int, float, int, int, int
+                ]] = []
+                routesystemstoinsert: List[Tuple[
+                    int, int, EDDNSystem, int
+                ]] = []
                 for lineno, line in enumerate(f):
                     process_line(
                         sysdb,
@@ -113,10 +118,13 @@ def process(sysdb: EDDNSysDB,
                 )
 
 
-def commit(sysdb,
-           timer,
-           infotoinsert,
-           routesystemstoinsert
+def commit(sysdb: EDDNSysDB,
+           timer: Timer,
+           infotoinsert: List[Tuple[
+                    int, int, datetime, datetime, int, int,
+                    int, int, float, int, int, int
+                ]],
+           routesystemstoinsert: List[Tuple[int, int, EDDNSystem, int]]
            ):
     sysdb.commit()
     if len(infotoinsert) != 0:

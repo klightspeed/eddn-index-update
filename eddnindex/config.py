@@ -71,12 +71,16 @@ class Config(object):
         site_config = os.path.join(site_config_dir, config_filename)
         user_config = os.path.join(user_config_dir, config_filename)
 
-        config.read([
+        config_files = [
             app_config,
             site_config,
             user_config,
-            override_config_filename
-        ])
+        ]
+
+        if override_config_filename is not None:
+            config_files.append(override_config_filename)
+
+        config.read(config_files)
 
         self.database = DatabaseConfig(dict(config["Database"]))
 
