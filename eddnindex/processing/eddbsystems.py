@@ -43,7 +43,11 @@ def process(sysdb: EDDNSysDB,
                 (sysid, ts) = sysdb.findeddbsysid(eddbsysid)
                 timer.time('sysquery')
                 if not sysid or ts != timestamp:
-                    starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in starpos]
+                    starpos = [
+                        math.floor(v * 32 + 0.5) / 32.0
+                        for v in starpos
+                    ]
+
                     (system, rejectReason, rejectData) = sysdb.getsystem(
                         timer,
                         sysname,

@@ -8,23 +8,47 @@ from ..database import DBConnection
 from ..timer import Timer
 from ..rejectdata import EDDNRejectData
 
-from .edsmmissingbodies import process as edsmmissingbodies
-from .edsmbodies import process as edsmbodies
-from .edsmstations import process as edsmstations
-from .edsmsystems import process as edsmsystems
-from .edsmsystemswithoutcoords import process as edsmsystemswithoutcoords
-from .edsmsystemswithoutcoordsprepurge import process as edsmsystemswithoutcoordsprepurge
-from .edsmhiddensystems import process as edsmhiddensystems
-from .edsmdeletedsystems import process as edsmdeletedsystems
-from .eddbsystems import process as eddbsystems
-from .eddnjournalfile import process as eddnjournalfile
-from .eddnjournalroute import process as eddnjournalroute
-from .eddnmarketfile import process as eddnmarketfile
+from .edsmmissingbodies import process \
+    as edsmmissingbodies
+from .edsmbodies import process \
+    as edsmbodies
+from .edsmstations import process \
+    as edsmstations
+from .edsmsystems import process \
+    as edsmsystems
+from .edsmsystemswithoutcoords import process \
+    as edsmsystemswithoutcoords
+from .edsmsystemswithoutcoordsprepurge import process \
+    as edsmsystemswithoutcoordsprepurge
+from .edsmhiddensystems import process \
+    as edsmhiddensystems
+from .edsmdeletedsystems import process \
+    as edsmdeletedsystems
+from .eddbsystems import process \
+    as eddbsystems
+from .eddnjournalfile import process \
+    as eddnjournalfile
+from .eddnjournalroute import process \
+    as eddnjournalroute
+from .eddnmarketfile import process \
+    as eddnmarketfile
 
 
-def main(args: ProcessorArgs, config: Config, timer: Timer, updatetitleprogress: Callable[[str], None]):
+def main(args: ProcessorArgs,
+         config: Config,
+         timer: Timer,
+         updatetitleprogress: Callable[[str], None]
+         ):
     conn = DBConnection(config)
-    sysdb = EDDNSysDB(conn, args.edsm_systems, args.edsm_bodies or args.edsm_missing_bodies, args.eddb_systems, config)
+
+    sysdb = EDDNSysDB(
+        conn,
+        args.edsm_systems,
+        args.edsm_bodies or args.edsm_missing_bodies,
+        args.eddb_systems,
+        config
+    )
+
     timer.time('init')
 
     if not args.no_eddn:
@@ -37,7 +61,7 @@ def main(args: ProcessorArgs, config: Config, timer: Timer, updatetitleprogress:
         sys.stderr.flush()
         if not args.no_journal:
             for filename, fileinfo in files.items():
-                if fileinfo.event_type is not None and fileinfo.event_type != 'NavRoute':
+                if fileinfo.event_type not in [None, 'NavRoute']:
                     eddnjournalfile(
                         sysdb,
                         timer,
@@ -52,7 +76,7 @@ def main(args: ProcessorArgs, config: Config, timer: Timer, updatetitleprogress:
 
         if args.nav_route:
             for filename, fileinfo in files.items():
-                if fileinfo.event_type is not None and fileinfo.event_type == 'NavRoute':
+                if fileinfo.event_type in ['NavRoute']:
                     eddnjournalroute(
                         sysdb,
                         timer,
@@ -80,11 +104,45 @@ def main(args: ProcessorArgs, config: Config, timer: Timer, updatetitleprogress:
 
     if args.edsm_systems:
         with open(config.edsm_systems_reject_file, 'at') as reject_file:
-            edsmsystems(sysdb, timer, reject_file, updatetitleprogress, config)
-            edsmsystemswithoutcoords(sysdb, timer, reject_file, updatetitleprogress, config)
-            edsmsystemswithoutcoordsprepurge(sysdb, timer, reject_file, updatetitleprogress, config)
-            edsmhiddensystems(sysdb, timer, reject_file, updatetitleprogress, config)
-            edsmdeletedsystems(sysdb, timer, reject_file, updatetitleprogress, config)
+            edsmsystems(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )
+
+            edsmsystemswithoutcoords(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )
+
+            edsmsystemswithoutcoordsprepurge(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )
+
+            edsmhiddensystems(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )
+
+            edsmdeletedsystems(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )
 
     if args.edsm_bodies:
         with open(config.edsm_bodies_reject_file, 'at') as reject_file:
@@ -108,12 +166,29 @@ def main(args: ProcessorArgs, config: Config, timer: Timer, updatetitleprogress:
                 )
 
     if args.edsm_missing_bodies:
-        edsmmissingbodies(sysdb, timer, updatetitleprogress, config)
+        edsmmissingbodies(
+            sysdb,
+            timer,
+            updatetitleprogress,
+            config
+        )
 
     if args.edsm_stations:
         with open(config.edsm_stations_reject_file, 'at') as reject_file:
-            edsmstations(sysdb, timer, reject_file, updatetitleprogress, config)
+            edsmstations(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )
 
     if args.eddb_systems:
         with open(config.eddb_systems_reject_file, 'at') as reject_file:
-            eddbsystems(sysdb, timer, reject_file, updatetitleprogress, config)
+            eddbsystems(
+                sysdb,
+                timer,
+                reject_file,
+                updatetitleprogress,
+                config
+            )

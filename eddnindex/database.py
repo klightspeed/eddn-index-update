@@ -7,16 +7,22 @@ class DBCursor(Protocol):
     lastrowid: int
     rowcount: int
 
-    def execute(self, command: str, parameters: Union[Sequence, Mapping[str, Any], None] = None):
+    def execute(self,
+                command: str,
+                parameters: Union[Sequence, Mapping[str, Any], None] = None):
         ...
 
-    def executemany(self, command: str, parameters: Sequence[Union[Sequence, Mapping[str, Any]]]):
+    def executemany(self,
+                    command: str,
+                    parameters: Sequence[Union[Sequence, Mapping[str, Any]]]):
         ...
 
     def fetchone(self) -> Union[Sequence, Mapping[str, Any]]:
         ...
 
-    def fetchmany(self, size: int) -> Sequence[Union[Sequence, Mapping[str, Any]]]:
+    def fetchmany(self,
+                  size: int
+                  ) -> Sequence[Union[Sequence, Mapping[str, Any]]]:
         ...
 
     def fetchall(self) -> Sequence[Union[Sequence, Mapping[str, Any]]]:
@@ -111,13 +117,24 @@ class DBConnection(object):
             self.paramstyle = sqlite3.paramstyle
             self.dialect = 'sqlite3'
         else:
-            raise ValueError('Invalid connection type {0}'.format(config.database.ConnectionType))
+            raise ValueError('Invalid connection type {0}'.format(
+                config.database.ConnectionType
+            ))
 
-    def cursor(self, prepared: bool = False, streaming: bool = False) -> DBCursor:
+    def cursor(self,
+               prepared: bool = False,
+               streaming: bool = False
+               ) -> DBCursor:
         if prepared:
-            return self.conn.cursor(*self.prepared_cursor_args, **self.prepared_cursor_kwargs)
+            return self.conn.cursor(
+                *self.prepared_cursor_args,
+                **self.prepared_cursor_kwargs
+            )
         elif streaming:
-            return self.conn.cursor(*self.streaming_cursor_args, **self.streaming_cursor_kwargs)
+            return self.conn.cursor(
+                *self.streaming_cursor_args,
+                **self.streaming_cursor_kwargs
+            )
         else:
             return self.conn.cursor()
 
@@ -173,15 +190,22 @@ class DBConnection(object):
 
 class SQLQuery(object):
     query: str
-    param_map: Optional[Callable[[DBConnection, Union[Sequence, Mapping, None]], Union[Sequence, Mapping, None]]]
+    param_map: Optional[Callable[
+        [DBConnection, Union[Sequence, Mapping, None]],
+        Union[Sequence, Mapping, None]]
+    ]
     last_row_func: Optional[Callable[[DBConnection, DBCursor], int]]
     dialect_queries: Mapping[str, str]
 
     def __init__(self,
                  query: str,
-                 param_map: Optional[Callable[[DBConnection, Union[Sequence, Mapping, None]],
-                                              Union[Sequence, Mapping, None]]] = None,
-                 last_row_func: Optional[Callable[[DBConnection, DBCursor], int]] = None,
+                 param_map: Optional[Callable[
+                     [DBConnection, Union[Sequence, Mapping, None]],
+                     Union[Sequence, Mapping, None]
+                 ]] = None,
+                 last_row_func: Optional[Callable[
+                     [DBConnection, DBCursor], int
+                 ]] = None,
                  **kwargs: str
                  ):
         self.query = query
@@ -206,7 +230,8 @@ class SQLQuery(object):
                    ) -> Union[Sequence, Mapping]:
         if self.param_map:
             return self.param_map(conn, params)
-        elif isinstance(params, Mapping) and conn.paramstyle in ['format', 'qmark', 'numeric']:
+        elif (isinstance(params, Mapping)
+              and conn.paramstyle in ['format', 'qmark', 'numeric']):
             return tuple(params.values())
         else:
             return params

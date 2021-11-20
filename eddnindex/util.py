@@ -28,7 +28,14 @@ def id64_to_modsysaddr(sysaddr: int) -> int:
     y2 = y0 >> sx
     z1 = z0 & sb
     z2 = z0 >> sx
-    return (z2 << 53) | (y2 << 47) | (x2 << 40) | (sz << 37) | (z1 << 30) | (y1 << 23) | (x1 << 16) | seq
+    return ((z2 << 53)
+            | (y2 << 47)
+            | (x2 << 40)
+            | (sz << 37)
+            | (z1 << 30)
+            | (y1 << 23)
+            | (x1 << 16)
+            | seq)
 
 
 def modsysaddr_to_id64(modsysaddr: int) -> int:
@@ -44,7 +51,11 @@ def modsysaddr_to_id64(modsysaddr: int) -> int:
     x0 = x1 + (x2 << sx)
     y0 = y1 + (y2 << sx)
     z0 = z1 + (z2 << sx)
-    return sz | (z0 << 3) | (y0 << (10 + sx)) | (x0 << (16 + sx * 2)) | (seq << (23 + sx * 3))
+    return (sz
+            | (z0 << 3)
+            | (y0 << (10 + sx))
+            | (x0 << (16 + sx * 2))
+            | (seq << (23 + sx * 3)))
 
 
 def from_db_string(name: Union[str, bytes]):

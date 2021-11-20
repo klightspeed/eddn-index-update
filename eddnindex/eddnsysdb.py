@@ -7,15 +7,18 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 import urllib.request
 import urllib.error
-from typing import Iterable, MutableSequence, Optional, Set, Tuple, List, Dict, Union, Sequence
+from typing import Iterable, MutableSequence, Optional, Set, \
+                   Tuple, List, Dict, Union, Sequence
 
 import numpy
 import numpy.typing
 import numpy.core.records
 
 from . import edtslookup
-from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, EDSMFile, EDDNRegion, EDDNStation, \
-    DTypeEDSMSystem, DTypeEDDBSystem, DTypeEDSMBody, NPTypeEDSMSystem, NPTypeEDDBSystem, NPTypeEDSMBody
+from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, \
+                   EDSMFile, EDDNRegion, EDDNStation, DTypeEDSMSystem, \
+                   DTypeEDDBSystem, DTypeEDSMBody, NPTypeEDSMSystem, \
+                   NPTypeEDDBSystem, NPTypeEDSMBody
 from .timer import Timer
 from . import constants
 from .util import id64_to_modsysaddr, modsysaddr_to_id64, from_db_string
@@ -41,7 +44,11 @@ class EDDNSysDB(object):
     knownbodiessheeturi: str
     edsmbodycachefile: str
 
-    def __init__(self, conn: DBConnection, loadedsmsys: bool, loadedsmbodies: bool, loadeddbsys: bool,
+    def __init__(self,
+                 conn: DBConnection,
+                 loadedsmsys: bool,
+                 loadedsmbodies: bool,
+                 loadeddbsys: bool,
                  config: Config):
         self.conn = conn
         self.regions = {}
@@ -97,16 +104,28 @@ class EDDNSysDB(object):
 
                 if len(edsmsysarray) > maxedsmsysid:
                     if len(edsmsysarray) < maxedsmsysid + 524288:
-                        edsmsysarray = numpy.resize(edsmsysarray, maxedsmsysid + 1048576)
-                    self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
+                        edsmsysarray = numpy.resize(
+                            edsmsysarray,
+                            maxedsmsysid + 1048576
+                        )
+                    self.edsmsysids = edsmsysarray.view(
+                        numpy.core.records.recarray
+                    )
 
                 timer.time('loadedsmsys', len(edsmsysarray))
 
             if self.edsmsysids is None:
                 c = sqlqueries.get_edsm_systems(conn)
 
-                edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=DTypeEDSMSystem)
-                self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
+                edsmsysarray = numpy.zeros(
+                    maxedsmsysid + 1048576,
+                    dtype=DTypeEDSMSystem
+                )
+
+                self.edsmsysids = edsmsysarray.view(
+                    numpy.core.records.recarray
+                )
+
                 timer.time('sql')
 
                 i = 0
@@ -127,17 +146,31 @@ class EDDNSysDB(object):
                         rec[5] = 1 if row[5] == b'\x01' else 0
                         rec[6] = 3
                         i += 1
+
                         if edsmid > maxedsmid:
                             maxedsmid = edsmid
+
                     sys.stderr.write('.')
+
                     if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmsysid, maxedsmid))
+                        sys.stderr.write(
+                            f'  {i} / {maxedsmsysid} ({maxedsmid})\n'
+                        )
+
                     sys.stderr.flush()
                     timer.time('loadedsmsys', len(rows))
-                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmsysid))
+
+                sys.stderr.write(
+                    f'  {i} / {maxedsmsysid}\n'
+                )
+
                 with open(self.edsmsyscachefile + '.tmp', 'wb') as f:
                     self.edsmsysids.tofile(f)
-                os.rename(self.edsmsyscachefile + '.tmp', self.edsmsyscachefile)
+
+                os.rename(
+                    self.edsmsyscachefile + '.tmp',
+                    self.edsmsyscachefile
+                )
 
     def loadeddbsystems(self, conn: DBConnection, timer: Timer):
         maxeddbsysid = sqlqueries.get_max_eddb_system_id(conn)
@@ -148,7 +181,11 @@ class EDDNSysDB(object):
             sys.stderr.write('Loading EDDB System IDs\n')
             c = sqlqueries.get_eddb_systems(conn)
 
-            eddbsysarray = numpy.zeros(maxeddbsysid + 1048576, dtype=DTypeEDDBSystem)
+            eddbsysarray = numpy.zeros(
+                maxeddbsysid + 1048576,
+                dtype=DTypeEDDBSystem
+            )
+
             self.eddbsysids = eddbsysarray.view(numpy.core.records.recarray)
             timer.time('sql')
 
@@ -166,14 +203,23 @@ class EDDNSysDB(object):
                     rec[1] = eddbid
                     rec[2] = row[2]
                     i += 1
+
                     if eddbid > maxeddbid:
                         maxeddbid = eddbid
+
                 sys.stderr.write('.')
+
                 if (i % 640000) == 0:
-                    sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxeddbsysid, maxeddbid))
+                    sys.stderr.write(
+                        f'  {i} / {maxeddbsysid} ({maxeddbid})\n'
+                    )
+
                 sys.stderr.flush()
                 timer.time('loadeddbsys', len(rows))
-            sys.stderr.write('  {0} / {1}\n'.format(i, maxeddbsysid))
+
+            sys.stderr.write(
+                f'  {i} / {maxeddbsysid}\n'
+            )
 
     def loadedsmbodies(self, conn: DBConnection, timer: Timer):
         maxedsmbodyid = sqlqueries.get_max_edsm_body_id(conn)
@@ -188,25 +234,40 @@ class EDDNSysDB(object):
 
                 if len(edsmbodyarray) > maxedsmbodyid:
                     if len(edsmbodyarray) < maxedsmbodyid + 524288:
-                        edsmbodyarray = numpy.resize(edsmbodyarray, maxedsmbodyid + 1048576)
-                    self.edsmbodyids = edsmbodyarray.view(numpy.core.records.recarray)
+                        edsmbodyarray = numpy.resize(
+                            edsmbodyarray,
+                            maxedsmbodyid + 1048576
+                        )
+                    self.edsmbodyids = edsmbodyarray.view(
+                        numpy.core.records.recarray
+                    )
 
                 timer.time('loadedsmbody', len(edsmbodyarray))
 
             if self.edsmbodyids is None:
                 c = sqlqueries.get_edsm_bodies(conn)
 
-                edsmbodyarray = numpy.zeros(maxedsmbodyid + 1048576, dtype=DTypeEDSMBody)
-                self.edsmbodyids = edsmbodyarray.view(numpy.core.records.recarray)
+                edsmbodyarray = numpy.zeros(
+                    maxedsmbodyid + 1048576,
+                    dtype=DTypeEDSMBody
+                )
+
+                self.edsmbodyids = edsmbodyarray.view(
+                    numpy.core.records.recarray
+                )
+
                 timer.time('sql')
 
                 i = 0
                 maxedsmid = 0
+
                 while True:
                     rows = c.fetchmany(10000)
                     timer.time('sqledsmbody', len(rows))
+
                     if len(rows) == 0:
                         break
+
                     for row in rows:
                         edsmid = row[1]
                         rec = edsmbodyarray[edsmid]
@@ -214,14 +275,23 @@ class EDDNSysDB(object):
                         rec[1] = edsmid
                         rec[2] = row[2]
                         i += 1
+
                         if edsmid > maxedsmid:
                             maxedsmid = edsmid
+
                     sys.stderr.write('.')
+
                     if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmbodyid, maxedsmid))
+                        sys.stderr.write(
+                            f'  {i} / {maxedsmbodyid} ({maxedsmid})\n'
+                        )
+
                     sys.stderr.flush()
                     timer.time('loadedsmbody', len(rows))
-                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmbodyid))
+
+                sys.stderr.write(
+                    f'  {i} / {maxedsmbodyid}\n'
+                )
 
     def loadparentsets(self, conn: DBConnection, timer: Timer):
         sys.stderr.write('Loading Parent Sets\n')
@@ -252,10 +322,25 @@ class EDDNSysDB(object):
         rows = sqlqueries.get_named_bodies(conn)
         timer.time('sqlbodyname', len(rows))
         for row in rows:
-            bi = EDDNBody(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
+            bi = EDDNBody(
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9],
+                row[10]
+            )
+
             if bi.system_id not in self.namedbodies:
                 self.namedbodies[bi.system_id] = {}
+
             snb = self.namedbodies[bi.system_id]
+
             if bi.name not in snb:
                 snb[bi.name] = bi
             elif type(snb[bi.name]) is not list:
@@ -272,8 +357,16 @@ class EDDNSysDB(object):
         timer.time('sqlname', len(rows))
 
         for row in rows:
-            si = EDDNSystem(row[0], row[1], row[2], row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105,
-                            row[3] != 0 and row[4] != 0 and row[5] != 0)
+            si = EDDNSystem(
+                row[0],
+                row[1],
+                row[2],
+                row[3] / 32.0 - 49985,
+                row[4] / 32.0 - 40985,
+                row[5] / 32.0 - 24105,
+                row[3] != 0 and row[4] != 0 and row[5] != 0
+            )
+
             if si.name not in self.namedsystems:
                 self.namedsystems[si.name] = si
             elif type(self.namedsystems[si.name]) is not list:
@@ -289,8 +382,21 @@ class EDDNSysDB(object):
         rows = sqlqueries.get_regions(conn)
         timer.time('sqlregion', len(rows))
         for row in rows:
-            ri = EDDNRegion(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01')
+            ri = EDDNRegion(
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9] == b'\x01'
+            )
+
             self.regions[ri.name.lower()] = ri
+
             if ri.region_address is not None:
                 self.regionaddrs[ri.region_address] = ri
 
@@ -334,13 +440,19 @@ class EDDNSysDB(object):
                     desig = bodydesig[len(sysname):]
 
                     if desig not in self.bodydesigs:
-                        row = sqlqueries.query_body_designation(self.conn, (desig,))
+                        row = sqlqueries.query_body_designation(
+                            self.conn,
+                            (desig,)
+                        )
 
                         if row and row[1] == desig:
                             desigid = int(row[0])
                             category = int(row[2])
                             self.bodydesigs[desig] = (desigid, category)
-                            sqlqueries.set_body_designation_used(self.conn, (desigid,))
+                            sqlqueries.set_body_designation_used(
+                                self.conn,
+                                (desigid,)
+                            )
 
                     if desig in self.bodydesigs:
                         desigid, category = self.bodydesigs[desig]
@@ -372,7 +484,7 @@ class EDDNSysDB(object):
     def _findsystem(self,
                     cursor: Union[Sequence[EDDNSystem], Sequence[Sequence]],
                     sysname: str,
-                    starpos: Union[Sequence[float, float, float], List[float]],
+                    starpos: Union[Tuple[float, float, float], List[float]],
                     sysaddr: Optional[int],
                     syslist: Set[EDDNSystem]):
         rows = list(cursor)
@@ -396,20 +508,33 @@ class EDDNSysDB(object):
         if starpos is not None or sysaddr is not None:
             matches: Set[EDDNSystem] = set()
             for system in systems:
-                if (sysname is None or system.name.lower() == sysname.lower()) and (
-                        starpos is None or not system.has_coords or (
-                        system.x == starpos[0] and system.y == starpos[1] and system.z == starpos[2])) and (
-                        sysaddr is None or sysaddr == system.id64):
+                if ((sysname is None or system.name.lower() == sysname.lower())
+                        and (starpos is None or not system.has_coords
+                             or (system.x == starpos[0]
+                                 and system.y == starpos[1]
+                                 and system.z == starpos[2]))
+                        and (sysaddr is None or sysaddr == system.id64)):
                     matches.add(system)
 
             if len(matches) == 1:
                 system = next(iter(matches))
+
                 if not system.has_coords and starpos is not None:
                     vx = int((starpos[0] + 49985) * 32)
                     vy = int((starpos[1] + 40985) * 32)
                     vz = int((starpos[2] + 24105) * 32)
-                    sqlqueries.set_system_coords(self.conn, (vx, vy, vz, system.id))
-                    system = system._replace(x=starpos[0], y=starpos[1], z=starpos[2], has_coords=True)
+
+                    sqlqueries.set_system_coords(
+                        self.conn,
+                        (vx, vy, vz, system.id)
+                    )
+
+                    system = system._replace(
+                        x=starpos[0],
+                        y=starpos[1],
+                        z=starpos[2],
+                        has_coords=True
+                    )
 
                 return system
 
@@ -459,13 +584,27 @@ class EDDNSysDB(object):
                     y2 = y0 >> sx
                     z1 = z0 & sb
                     z2 = z0 >> sx
-                    modsysaddr = (z2 << 53) | (y2 << 47) | (x2 << 40) | (sz << 37) | (z1 << 30) | (y1 << 23) | (
-                                x1 << 16) | seq
+
+                    modsysaddr = ((z2 << 53)
+                                  | (y2 << 47)
+                                  | (x2 << 40)
+                                  | (sz << 37)
+                                  | (z1 << 30)
+                                  | (y1 << 23)
+                                  | (x1 << 16)
+                                  | seq)
+
                 elif region_info.region_address is not None:
-                    modsysaddr = (region_info.region_address << 40) | (sz << 37) | (mid << 16) | seq
+                    modsysaddr = ((region_info.region_address << 40)
+                                  | (sz << 37)
+                                  | (mid << 16)
+                                  | seq)
 
                 if modsysaddr is not None:
-                    rows = sqlqueries.get_systems_by_modsysaddr(self.conn, (modsysaddr,))
+                    rows = sqlqueries.get_systems_by_modsysaddr(
+                        self.conn,
+                        (modsysaddr,)
+                    )
 
                     systems += [
                         EDDNSystem(
@@ -481,9 +620,11 @@ class EDDNSysDB(object):
 
         return systems
 
-    def getrejectdata(self, sysname: str, sysaddr: int, systems: Optional[Iterable[EDDNSystem]]):
-        id64name = None
-        nameid64 = None
+    def getrejectdata(self,
+                      sysname: str,
+                      sysaddr: int,
+                      systems: Optional[Iterable[EDDNSystem]]
+                      ):
         pgsysmatch = constants.procgen_sysname_re.match(sysname)
         rejectdata = {}
 
@@ -539,20 +680,22 @@ class EDDNSysDB(object):
                     y2 = y0 >> sx
                     z1 = z0 & sb
                     z2 = z0 >> sx
-                    modsysaddr = (
-                            (z2 << 53) |
-                            (y2 << 47) |
-                            (x2 << 40) |
-                            (sz << 37) |
-                            (z1 << 30) |
-                            (y1 << 23) |
-                            (x1 << 16) |
-                            seq
-                    )
+                    modsysaddr = ((z2 << 53)
+                                  | (y2 << 47)
+                                  | (x2 << 40)
+                                  | (sz << 37)
+                                  | (z1 << 30)
+                                  | (y1 << 23)
+                                  | (x1 << 16)
+                                  | seq)
 
                     rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
                 elif region_info.region_address is not None:
-                    modsysaddr = (region_info.region_address << 40) | (sz << 37) | (mid << 16) | seq
+                    modsysaddr = ((region_info.region_address << 40)
+                                  | (sz << 37)
+                                  | (mid << 16)
+                                  | seq)
+
                     rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
 
         if systems is not None:
@@ -575,7 +718,8 @@ class EDDNSysDB(object):
                   y: Optional[float],
                   z: Optional[float],
                   sysaddr: Optional[int]
-                  ) -> Union[Tuple[EDDNSystem, None, None], Tuple[None, str, dict]]:
+                  ) -> Union[Tuple[EDDNSystem, None, None],
+                             Tuple[None, str, dict]]:
         if x is not None and y is not None and z is not None:
             starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in (x, y, z)]
             vx = int((starpos[0] + 49985) * 32)
@@ -594,7 +738,14 @@ class EDDNSysDB(object):
             if type(namedsystems) is not list:
                 namedsystems = [namedsystems]
 
-            system = self._findsystem(namedsystems, sysname, starpos, sysaddr, systems)
+            system = self._findsystem(
+                namedsystems,
+                sysname,
+                starpos,
+                sysaddr,
+                systems
+            )
+
             if system is not None:
                 return (system, None, None)
 
@@ -644,26 +795,37 @@ class EDDNSysDB(object):
                     )
 
                 elif region_info.region_address is not None:
-                    modsysaddr = (region_info.region_address << 40) | (sz << 37) | (mid << 16) | seq
+                    modsysaddr = ((region_info.region_address << 40)
+                                  | (sz << 37)
+                                  | (mid << 16)
+                                  | seq)
 
                 timer.time('sysquerypgre')
+
                 if modsysaddr is not None:
-                    rows = sqlqueries.get_systems_by_modsysaddr(self.conn, (modsysaddr,))
-                    system = self._findsystem(rows, sysname, starpos, sysaddr, systems)
+                    rows = sqlqueries.get_systems_by_modsysaddr(
+                        self.conn,
+                        (modsysaddr,)
+                    )
+
+                    system = self._findsystem(
+                        rows,
+                        sysname,
+                        starpos,
+                        sysaddr,
+                        systems
+                    )
+
                     timer.time('sysselectmaddr')
 
                     if system is not None:
                         return (system, None, None)
                 else:
-                    errmsg = 'Unable to resolve system address for system {0} [{1}] ({2},{3},{4})\n'.format(
-                        sysname,
-                        sysaddr,
-                        x,
-                        y,
-                        z
-                    )
+                    errmsg = ('Unable to resolve system address for system '
+                              f'{sysname} [{sysaddr}] ({x},{y},{z})\n')
                     sys.stderr.write(errmsg)
-                    sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
+                    sys.stderr.writelines([f'{s}\n' for s in systems])
+
                     return (
                         None,
                         errmsg,
@@ -671,16 +833,11 @@ class EDDNSysDB(object):
                     )
                     # raise ValueError('Unable to resolve system address')
             else:
-                errmsg = 'Region {5} not found for system {0} [{1}] ({2},{3},{4})\n'.format(
-                    sysname,
-                    sysaddr,
-                    x,
-                    y,
-                    z,
-                    regionname
-                )
+                errmsg = (f'Region {regionname} not found for system '
+                          f'{sysname} [{sysaddr}] ({x},{y},{z})\n')
                 sys.stderr.write(errmsg)
-                sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
+                sys.stderr.writelines([f'{s}\n' for s in systems])
+
                 return (
                     None,
                     errmsg,
@@ -690,28 +847,66 @@ class EDDNSysDB(object):
 
         if sysaddr is not None:
             modsysaddr = id64_to_modsysaddr(sysaddr)
-            rows = sqlqueries.get_systems_by_modsysaddr(self.conn, (modsysaddr,))
-            system = self._findsystem(rows, sysname, starpos, sysaddr, systems)
+
+            rows = sqlqueries.get_systems_by_modsysaddr(
+                self.conn,
+                (modsysaddr,)
+            )
+
+            system = self._findsystem(
+                rows,
+                sysname,
+                starpos,
+                sysaddr,
+                systems
+            )
+
             timer.time('sysselectmaddr')
 
             if system is not None:
                 return (system, None, None)
 
-        rows = sqlqueries.get_systems_by_name(self.conn, (sysname,))
-        system = self._findsystem(rows, sysname, starpos, sysaddr, systems)
+        rows = sqlqueries.get_systems_by_name(
+            self.conn,
+            (sysname,)
+        )
+
+        system = self._findsystem(
+            rows,
+            sysname,
+            starpos,
+            sysaddr,
+            systems
+        )
+
         timer.time('sysselectname')
 
         if system is not None:
             return (system, None, None)
 
         timer.time('sysquery', 0)
-        edtsid64 = edtslookup.find_edts_system_id64(sysname, sysaddr, starpos)
+        edtsid64 = edtslookup.find_edts_system_id64(
+            sysname,
+            sysaddr,
+            starpos
+        )
 
         if edtsid64 is not None:
             timer.time('sysqueryedts', 0)
             modsysaddr = id64_to_modsysaddr(edtsid64)
-            rows = sqlqueries.get_systems_by_modsysaddr(self.conn, (modsysaddr,))
-            system = self._findsystem(rows, sysname, starpos, sysaddr, systems)
+            rows = sqlqueries.get_systems_by_modsysaddr(
+                self.conn,
+                (modsysaddr,)
+            )
+
+            system = self._findsystem(
+                rows,
+                sysname,
+                starpos,
+                sysaddr,
+                systems
+            )
+
             timer.time('sysselectmaddr')
 
             if system is not None:
@@ -719,8 +914,19 @@ class EDDNSysDB(object):
                 return (system, None, None)
 
         timer.time('sysqueryedts', 0)
-        rows = sqlqueries.get_systems_by_name(self.conn, (sysname,))
-        system = self._findsystem(rows, sysname, starpos, None, systems)
+        rows = sqlqueries.get_systems_by_name(
+            self.conn,
+            (sysname,)
+        )
+
+        system = self._findsystem(
+            rows,
+            sysname,
+            starpos,
+            None,
+            systems
+        )
+
         timer.time('sysselectname')
 
         if system is not None:
@@ -730,17 +936,37 @@ class EDDNSysDB(object):
         #    import pdb; pdb.set_trace()
 
         if region_info is not None and modsysaddr is not None:
-            raddr = ((vz // 40960) << 13) | ((vy // 40960) << 7) | (vx // 40960)
+            raddr = (((vz // 40960) << 13)
+                     | ((vy // 40960) << 7)
+                     | (vx // 40960))
+
             if starpos is None or raddr == modsysaddr >> 40:
                 cursor = sqlqueries.insert_system(
                     self.conn,
-                    (modsysaddr, vx, vy, vz, region_info.is_sphere_sector, 0)
+                    (
+                        modsysaddr,
+                        vx,
+                        vy,
+                        vz,
+                        region_info.is_sphere_sector,
+                        0
+                    )
                 )
                 sysid = cursor.lastrowid
                 if region_info.is_sphere_sector:
                     sqlqueries.insert_sphere_sector_system(
                         self.conn,
-                        (sysid, modsysaddr, region_info.id, mid1a, mid1b, mid2, sz, mid3, seq)
+                        (
+                            sysid,
+                            modsysaddr,
+                            region_info.id,
+                            mid1a,
+                            mid1b,
+                            mid2,
+                            sz,
+                            mid3,
+                            seq
+                        )
                     )
 
                 if starpos is not None:
@@ -774,7 +1000,10 @@ class EDDNSysDB(object):
 
         elif sysaddr is not None:
             modsysaddr = id64_to_modsysaddr(sysaddr)
-            raddr = ((vz // 40960) << 13) | ((vy // 40960) << 7) | (vx // 40960)
+            raddr = (((vz // 40960) << 13)
+                     | ((vy // 40960) << 7)
+                     | (vx // 40960))
+
             if starpos is None or raddr == modsysaddr >> 40:
                 sysid = sqlqueries.insert_system(
                     self.conn,
@@ -814,15 +1043,26 @@ class EDDNSysDB(object):
                         None
                     )
 
-        raddr = ((vz // 40960) << 13) | ((vy // 40960) << 7) | (vx // 40960)
+        raddr = (((vz // 40960) << 13)
+                 | ((vy // 40960) << 7)
+                 | (vx // 40960))
 
         if starpos is not None:
             for mc in range(0, 8):
                 rx = (vx % 40960) >> mc
                 ry = (vy % 40960) >> mc
                 rz = (vz % 40960) >> mc
-                baddr = (raddr << 40) | (mc << 37) | (rz << 30) | (ry << 23) | (rx << 16)
-                rows = sqlqueries.find_systems_in_boxel(self.conn, (baddr, baddr + 65536))
+
+                baddr = ((raddr << 40)
+                         | (mc << 37)
+                         | (rz << 30)
+                         | (ry << 23)
+                         | (rx << 16))
+
+                rows = sqlqueries.find_systems_in_boxel(
+                    self.conn,
+                    (baddr, baddr + 65536)
+                )
 
                 for row in rows:
                     if (vx - 2 <= row[3] <= vx + 2
@@ -842,7 +1082,8 @@ class EDDNSysDB(object):
 
         timer.time('sysselectmaddr')
 
-        errmsg = 'Unable to resolve system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, x, y, z)
+        errmsg = ('Unable to resolve system '
+                  f'{sysname} [{sysaddr}] ({x},{y},{z})\n')
         # sys.stderr.write(errmsg)
         # sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
         # raise ValueError('Unable to find system')
@@ -1339,7 +1580,6 @@ class EDDNSysDB(object):
         rows = sqlqueries.get_bodies_by_name(self.conn, (system.id, name, 1))
         rows += sqlqueries.get_bodies_by_name(self.conn, (system.id, name, 0))
         timer.time('bodyselectname')
-        ufrows = rows
 
         multimatch = len(rows) > 1
 

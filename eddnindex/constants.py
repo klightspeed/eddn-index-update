@@ -12,7 +12,14 @@ reverse_procgen_sysname_re = re.compile(
         |[a-z]+[A-Z](|[ ][a-z]+[A-Z])
        )$
     ''', re.VERBOSE)
-procgen_sysname_re = re.compile('^([A-Za-z0-9.()\' -]+?) ([A-Z][A-Z]-[A-Z]) ([a-h])(?:([0-9]+)-|)([0-9]+)$')
+procgen_sysname_re = re.compile(
+    '''
+      ^
+       ([A-Za-z0-9.()\' -]+?)[ ]
+       ([A-Z][A-Z]-[A-Z])[ ]
+       ([a-h])(?:([0-9]+)-|)([0-9]+)
+      $
+    ''', re.VERBOSE)
 procgen_body_name_re = re.compile(
     '''
       ^
@@ -70,19 +77,22 @@ procgen_sys_body_name_re = re.compile(
    ''', re.VERBOSE)
 
 
-timestamp_re = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-5][0-9])')
+timestamp_re = re.compile(
+    '^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-5][0-9])'
+)
+
 carrier_name_re = re.compile('^[A-Z0-9]{3}-[A-Z0-9]{3}$')
 
-timestamp_base_date = datetime.strptime('2014-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
-timestamp_max_date = datetime.strptime('9999-12-31 00:00:00', '%Y-%m-%d %H:%M:%S')
-megaship_week_0 = datetime.strptime('2016-10-20 07:00:00', '%Y-%m-%d %H:%M:%S')
-ed_3_0_0_date = datetime.strptime('2018-02-27 15:00:00', '%Y-%m-%d %H:%M:%S')
-ed_3_0_3_date = datetime.strptime('2018-03-19 10:00:00', '%Y-%m-%d %H:%M:%S')
-ed_3_0_4_date = datetime.strptime('2018-03-27 16:00:00', '%Y-%m-%d %H:%M:%S')
-ed_3_3_0_date = datetime.strptime('2018-12-11 16:00:00', '%Y-%m-%d %H:%M:%S')
-ed_3_3_2_date = datetime.strptime('2019-01-17 10:00:00', '%Y-%m-%d %H:%M:%S')
-ed_3_7_0_date = datetime.strptime('2020-06-09 10:00:00', '%Y-%m-%d %H:%M:%S')
-ed_4_0_0_date = datetime.strptime('2021-05-19 10:00:00', '%Y-%m-%d %H:%M:%S')
+timestamp_base_date = datetime.strptime('2014-01-01', '%Y-%m-%d')
+timestamp_max_date = datetime.strptime('9999-12-31', '%Y-%m-%d')
+megaship_week_0 = datetime.strptime('2016-10-20 07:00', '%Y-%m-%d %H:%M')
+ed_3_0_0_date = datetime.strptime('2018-02-27 15:00', '%Y-%m-%d %H:%M')
+ed_3_0_3_date = datetime.strptime('2018-03-19 10:00', '%Y-%m-%d %H:%M')
+ed_3_0_4_date = datetime.strptime('2018-03-27 16:00', '%Y-%m-%d %H:%M')
+ed_3_3_0_date = datetime.strptime('2018-12-11 16:00', '%Y-%m-%d %H:%M')
+ed_3_3_2_date = datetime.strptime('2019-01-17 10:00', '%Y-%m-%d %H:%M')
+ed_3_7_0_date = datetime.strptime('2020-06-09 10:00', '%Y-%m-%d %H:%M')
+ed_4_0_0_date = datetime.strptime('2021-05-19 10:00', '%Y-%m-%d %H:%M')
 
 EDSMStationTypes = {
     'Asteroid base': 'AsteroidBase',

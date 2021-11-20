@@ -10,18 +10,25 @@ from ..config import Config
 from ..types import Writable
 from ..eddnsysdb import EDDNSysDB
 from ..timer import Timer
-from .. import constants
 from ..util import timestamp_to_datetime
 
 
-def updatesystemfromedsmbyid(sysdb: EDDNSysDB, edsmid: int, timer: Timer, rejectout: Writable) -> bool:
-    url = 'https://www.edsm.net/api-v1/system?systemId={0}&coords=1&showId=1&submitted=1&includeHidden=1'.format(edsmid)
+def updatesystemfromedsmbyid(sysdb: EDDNSysDB,
+                             edsmid: int,
+                             timer: Timer,
+                             rejectout: Writable
+                             ) -> bool:
+    url = ('https://www.edsm.net/api-v1/system?'
+           f'systemId={edsmid}'
+           '&coords=1'
+           '&showId=1'
+           '&submitted=1'
+           '&includeHidden=1')
     try:
         while True:
             try:
                 with urllib.request.urlopen(url) as f:
                     msg = json.load(f)
-                    info = f.info()
             except urllib.error.URLError:
                 time.sleep(30)
             else:
@@ -50,8 +57,7 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB, edsmid: int, timer: Timer, reject
     else:
         timer.time('edsmhttp')
         sqltimestamp = timestamp_to_datetime(timestamp)
-        sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
-        (sysid, ts, hascoord, rec) = sysdb.findedsmsysid(edsmsysid)
+        (_, _, _, rec) = sysdb.findedsmsysid(edsmsysid)
         timer.time('sysquery')
         if starpos is not None:
             starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in starpos]
@@ -76,7 +82,15 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB, edsmid: int, timer: Timer, reject
         timer.time('sysquery', 0)
 
         if system is not None:
-            rec = sysdb.updateedsmsysid(edsmsysid, system.id, sqltimestamp, starpos is not None, False, False)
+            rec = sysdb.updateedsmsysid(
+                edsmsysid,
+                system.id,
+                sqltimestamp,
+                starpos is not None,
+                False,
+                False
+            )
+
         else:
             rejectmsg = {
                 'rejectReason': rejectReason,
@@ -109,7 +123,7 @@ def process(sysdb: EDDNSysDB,
     '''
     for row in sysdb.edsmsysids:
         row[5] = 0
-    
+
     sysdb.saveedsmsyscache()
     '''
 
@@ -118,8 +132,16 @@ def process(sysdb: EDDNSysDB,
             sys.stderr.write('{0:10d}'.format(row[1]) + '\b' * 10)
             sys.stderr.flush()
             rec = row
+
             if not updatesystemfromedsmbyid(sysdb, row[1], timer, rejectout):
-                rec = sysdb.updateedsmsysid(row[1], row[0], row[2], False, False, True)
+                rec = sysdb.updateedsmsysid(
+                    row[1],
+                    row[0],
+                    row[2],
+                    False,
+                    False,
+                    True
+                )
 
             rec.processed = 7
 
