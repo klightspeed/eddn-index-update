@@ -74,6 +74,7 @@ timestamp_re = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0
 carrier_name_re = re.compile('^[A-Z0-9]{3}-[A-Z0-9]{3}$')
 
 timestamp_base_date = datetime.strptime('2014-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+timestamp_max_date = datetime.strptime('9999-12-31 00:00:00', '%Y-%m-%d %H:%M:%S')
 megaship_week_0 = datetime.strptime('2016-10-20 07:00:00', '%Y-%m-%d %H:%M:%S')
 ed_3_0_0_date = datetime.strptime('2018-02-27 15:00:00', '%Y-%m-%d %H:%M:%S')
 ed_3_0_3_date = datetime.strptime('2018-03-19 10:00:00', '%Y-%m-%d %H:%M:%S')

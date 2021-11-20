@@ -127,4 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Virtual env
 venv/
+
+# edts
+edts/
+
+# Jetbrains
+.idea/

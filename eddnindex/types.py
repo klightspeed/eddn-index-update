@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import NamedTuple, TypedDict, Protocol
+from typing import NamedTuple, Optional, TypedDict, Protocol
 import numpy
 
 
@@ -21,8 +21,8 @@ class EDDNStation(NamedTuple):
     systemid: int
     type: str
     loctype: str
-    body: str
-    bodyid: int
+    body: Optional[str]
+    bodyid: Optional[int]
     isrejected: bool
     validfrom: datetime
     validuntil: datetime
@@ -63,12 +63,13 @@ class EDDNBody(NamedTuple):
     name: str
     systemname: str
     systemid: int
-    bodyid: int
-    category: int
+    bodyid: Optional[int]
+    category: Optional[int]
     argofperiapsis: float
     validfrom: datetime
     validuntil: datetime
     isrejected: bool
+    designationid: Optional[int]
 
 
 class EDDNFaction(NamedTuple):

@@ -1,4 +1,4 @@
-from typing import Tuple, Union
+from typing import List, Tuple, Union
 
 try:
     from edts.edtslib.system import from_name
@@ -11,7 +11,10 @@ except ImportError:
         return None
 
 
-def find_edts_system_id64(sysname: str, sysaddr: int, starpos: Tuple[float, float, float]) -> Union[int, None]:
+def find_edts_system_id64(sysname: str, 
+                          sysaddr: int,
+                          starpos: Union[Tuple[float, float, float], List[float], None]
+                          ) -> Union[int, None]:
     edtssys = from_name(sysname, allow_known=False, allow_id64data=False)
 
     if edtssys is not None:
