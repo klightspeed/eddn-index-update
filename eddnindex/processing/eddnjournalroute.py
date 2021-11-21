@@ -228,11 +228,15 @@ def process_route(sysdb,
                   line_len,
                   line_routes
                   ):
+    reject = False
+    reject_reason = None
+    reject_data = None
+
     if len(line_routes) < 2:
         reject = True
         reject_reason = 'Route too short'
         reject_data = route
-    elif len(s for s, _, _, _ in line_routes if s is None) != 0:
+    elif len([s for s, _, _, _ in line_routes if s is None]) != 0:
         sys_rejects = [
             (system, rejectReason, rejectData, n)
             for system, n, rejectReason, rejectData in line_routes

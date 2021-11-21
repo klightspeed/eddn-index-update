@@ -129,6 +129,8 @@ def process_line(sysdb: EDDNSysDB,
                  lineno: int,
                  line: bytes
                  ):
+    updatecache = False
+
     if ((lineno + 1) >= len(lines)
             or lines[lineno + 1] == 0
             or lines[lineno + 1] > len(sysdb.edsmbodyids)

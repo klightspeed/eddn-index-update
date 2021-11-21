@@ -299,6 +299,7 @@ def process_event(sysdb: EDDNSysDB,
                   ):
     starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in starpos]
     reject_data: Any
+    reject = False
 
     (system, reject_reason, reject_data) = sysdb.getsystem(
         timer,
@@ -312,6 +313,8 @@ def process_event(sysdb: EDDNSysDB,
     timer.time('sysquery')
     if system is not None:
         systemid = system.id
+        sysbodyid: int = None
+
         if ((lineno + 1) not in stnlines
                 and sqltimestamp is not None
                 and not (ed_3_0_3_date <= sqltimestamp < ed_3_0_4_date
