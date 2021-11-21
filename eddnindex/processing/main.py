@@ -2,7 +2,8 @@ import sys
 from typing import Callable
 
 from ..config import Config
-from ..types import ProcessorArgs, Writable
+from ..types import Writable
+from ..args import ProcessorArgs
 from ..eddnsysdb import EDDNSysDB
 from ..database import DBConnection
 from ..timer import Timer

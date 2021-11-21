@@ -120,24 +120,6 @@ class Writable(Protocol):
         ...
 
 
-class ProcessorArgs(Protocol):
-    reprocess: bool
-    reprocess_all: bool
-    no_journal: bool
-    market: bool
-    nav_route: bool
-    edsm_systems: bool
-    edsm_bodies: bool
-    edsm_missing_bodies: bool
-    edsm_stations: bool
-    eddb_systems: bool
-    eddb_stations: bool
-    no_eddn: bool
-    process_title_progress: bool
-    config_file: str
-    print_config: bool
-
-
 class KnownBody(TypedDict):
     SystemAddress: int
     SystemName: str

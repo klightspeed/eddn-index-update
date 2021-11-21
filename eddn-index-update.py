@@ -6,7 +6,7 @@ from eddnindex.config import Config
 from eddnindex.timer import Timer
 import eddnindex.processing.main as process
 from eddnindex.proctitleprogress import update_title_progress
-from eddnindex.types import ProcessorArgs
+from eddnindex.args import ProcessorArgs
 
 
 def unhandledexception(exctype, excvalue, traceback):
@@ -39,7 +39,7 @@ def main():
     )
 
     argparser.add_argument(
-        '--no-journal', dest='nojournal',
+        '--no-journal', dest='no_journal',
         action='store_const', const=True, default=False,
         help='Skip EDDN Journal messages'
     )
