@@ -112,10 +112,10 @@ def main():
 
     args: ProcessorArgs = argparser.parse_args()
 
+    sys.excepthook = unhandledexception
+
     config = Config()
     config.load('eddn-index-update.ini', args.config_file)
-
-    sys.excepthook = unhandledexception
 
     if args.process_title_progress:
         titleprogress = update_title_progress
