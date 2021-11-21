@@ -69,7 +69,7 @@ def process(sysdb: EDDNSysDB,
                     totalsize += len(line)
 
                     if (linecount % 1000) == 0:
-                        stntoinsert, infotoinsert = commit(
+                        commit(
                             sysdb,
                             timer,
                             stntoinsert,
@@ -92,7 +92,7 @@ def process(sysdb: EDDNSysDB,
                     infotoinsert
                 )
 
-                sys.stderr.write(f'  {lineno + 1}\n')
+                sys.stderr.write(f'  {linecount}\n')
 
                 sysdb.updatefileinfo(
                     fileinfo.id,

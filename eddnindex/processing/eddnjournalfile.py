@@ -10,7 +10,7 @@ from typing import Any, Callable, List, Tuple
 from ..config import Config
 from ..types import EDDNFaction, EDDNFile, EDDNStation, Writable
 from .. import constants
-from constants import ed_3_0_3_date, ed_3_0_4_date
+from ..constants import ed_3_0_3_date, ed_3_0_4_date
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
 from ..timer import Timer
@@ -237,7 +237,6 @@ def process_line(sysdb: EDDNSysDB,
             }
             rejectout.write(json.dumps(msg) + '\n')
             timer.time('error')
-            pass
         else:
             if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
                 marketid = None

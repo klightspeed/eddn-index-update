@@ -21,6 +21,7 @@ def process(sysdb: EDDNSysDB,
     with bz2.open(config.eddb_systems_file, 'rt', encoding='utf8') as f:
         csvreader = csv.DictReader(f)
         w = 0
+        linecount = 0
         for i, msg in enumerate(csvreader):
             timer.time('read')
             rejectmsg: Dict[str, Any]
@@ -38,7 +39,6 @@ def process(sysdb: EDDNSysDB,
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
                 timer.time('error')
-                pass
             else:
                 timer.time('parse')
                 (sysid, ts) = sysdb.findeddbsysid(eddbsysid)
@@ -72,6 +72,8 @@ def process(sysdb: EDDNSysDB,
                     timer.time('eddbupdate')
                     w += 1
 
+            linecount += 1
+
             if ((i + 1) % 1000) == 0:
                 sysdb.commit()
                 sys.stderr.write('.' if w == 0 else '*')
@@ -84,7 +86,7 @@ def process(sysdb: EDDNSysDB,
                     updatetitleprogress('EDDBSys:{0}'.format(i + 1))
                 timer.time('commit')
 
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {linecount}\n')
     sys.stderr.flush()
     sysdb.commit()
     timer.time('commit')

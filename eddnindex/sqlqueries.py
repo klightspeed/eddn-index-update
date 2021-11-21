@@ -1,5 +1,5 @@
 from typing import Generic, TypeVar, Union, Callable, Optional
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from .database import DBConnection, DBCursor, SQLQuery
 
@@ -35,7 +35,7 @@ class SQLQueryUpsert(object):
                  ):
         self.update_query = update_query
         self.insert_query = insert_query
-    
+
     def __call__(self,
                  conn: DBConnection,
                  params: Sequence
@@ -61,7 +61,7 @@ class SQLQueryExec(Generic[T, U]):
                  ):
         self.query = query
         self.executor = executor
-    
+
     def __call__(self,
                  conn: DBConnection,
                  params: T = None
@@ -81,7 +81,7 @@ class SQLQueryExecParamRequired(Generic[T, U]):
                  ):
         self.query = query
         self.executor = executor
-    
+
     def __call__(self,
                  conn: DBConnection,
                  params: T

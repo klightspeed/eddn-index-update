@@ -8,15 +8,15 @@ import eddnindex.processing.main as process
 from eddnindex.proctitleprogress import update_title_progress
 
 
-def unhandledexception(type, value, traceback):
-    sys.__excepthook__(type, value, traceback)
+def unhandledexception(exctype, excvalue, traceback):
+    sys.__excepthook__(exctype, excvalue, traceback)
     from bdb import BdbQuit
     if type is not KeyboardInterrupt and type is not BdbQuit:
         import pdb
         pdb.post_mortem(traceback)
 
 
-def dummytitleprogress(text: str):
+def dummytitleprogress(_: str):
     pass
 
 

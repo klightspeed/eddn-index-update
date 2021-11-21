@@ -167,7 +167,6 @@ def process_line(sysdb,
         }
         rejectout.write(json.dumps(msg) + '\n')
         timer.time('error')
-        pass
     else:
         sqltimestamp = timestamp_to_datetime(timestamp)
         sqlgwtimestamp = timestamp_to_datetime(gwtimestamp)

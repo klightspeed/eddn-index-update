@@ -105,7 +105,9 @@ def main(args: ProcessorArgs,
                     )
 
     if args.edsm_systems:
-        with open(config.edsm_systems_reject_file, 'at') as reject_file:
+        with open(config.edsm_systems_reject_file,
+                  'at',
+                  encoding='utf-8') as reject_file:
             edsmsystems(
                 sysdb,
                 timer,
@@ -147,7 +149,9 @@ def main(args: ProcessorArgs,
             )
 
     if args.edsm_bodies:
-        with open(config.edsm_bodies_reject_file, 'at') as reject_file:
+        with open(config.edsm_bodies_reject_file,
+                  'at',
+                  encoding='utf-8') as reject_file:
             sys.stderr.write('Retrieving EDSM body files from DB\n')
             sys.stderr.flush()
             files = sysdb.getedsmfiles()
@@ -176,7 +180,9 @@ def main(args: ProcessorArgs,
         )
 
     if args.edsm_stations:
-        with open(config.edsm_stations_reject_file, 'at') as reject_file:
+        with open(config.edsm_stations_reject_file,
+                  'at',
+                  encoding='utf-8') as reject_file:
             edsmstations(
                 sysdb,
                 timer,
@@ -186,7 +192,9 @@ def main(args: ProcessorArgs,
             )
 
     if args.eddb_systems:
-        with open(config.eddb_systems_reject_file, 'at') as reject_file:
+        with open(config.eddb_systems_reject_file,
+                  'at',
+                  encoding='utf-8') as reject_file:
             eddbsystems(
                 sysdb,
                 timer,

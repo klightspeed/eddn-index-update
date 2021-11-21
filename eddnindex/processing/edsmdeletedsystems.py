@@ -24,9 +24,9 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB,
            '&showId=1'
            '&submitted=1'
            '&includeHidden=1')
-    
+
     starpos: Optional[List[float]]
-    
+
     try:
         while True:
             try:
@@ -51,7 +51,7 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB,
             timer.time('edsmhttp')
             return False
     except (OverflowError, ValueError, TypeError, json.JSONDecodeError):
-        (exctype, excvalue, traceback) = sys.exc_info()
+        (exctype, _, traceback) = sys.exc_info()
         sys.stderr.write('Error: {0}\n'.format(exctype))
         import pdb
         pdb.post_mortem(traceback)
@@ -114,7 +114,7 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            _: Config
             ):
     sys.stderr.write('Processing EDSM deleted systems\n')
     w = 0
@@ -123,12 +123,10 @@ def process(sysdb: EDDNSysDB,
     from timeit import default_timer
     tstart = default_timer()
 
-    '''
-    for row in sysdb.edsmsysids:
-        row[5] = 0
-
-    sysdb.saveedsmsyscache()
-    '''
+    # for row in sysdb.edsmsysids:
+    #     row[5] = 0
+    #
+    # sysdb.saveedsmsyscache()
 
     for i, row in enumerate(sysdb.edsmsysids):
         if row[1] == i and row[6] <= 0 and row[5] == 0:
@@ -150,10 +148,6 @@ def process(sysdb: EDDNSysDB,
 
             w += 1
             w2 += 1
-
-            if w >= 50:
-                import pdb
-                pdb.set_trace()
 
         if ((i + 1) % 1000) == 0:
             sysdb.commit()
