@@ -313,7 +313,7 @@ def process_event(sysdb: EDDNSysDB,
     timer.time('sysquery')
     if system is not None:
         systemid = system.id
-        sysbodyid: int = None
+        sysbodyid: int = 0
 
         if ((lineno + 1) not in stnlines
                 and sqltimestamp is not None
