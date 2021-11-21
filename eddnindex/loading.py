@@ -4,8 +4,8 @@ import sys
 import urllib.request
 import urllib.error
 from typing import Tuple
-from collections.abc import MutableSequence as ML, \
-                            MutableMapping as MD
+from collections.abc import MutableSequence as List, \
+                            MutableMapping as Dict
 
 import numpy
 import numpy.typing
@@ -254,11 +254,11 @@ def edsmbodies(conn: DBConnection,
 
 def parentsets(conn: DBConnection,
                timer: Timer
-               ) -> MD[Tuple[int, str], int]:
+               ) -> Dict[Tuple[int, str], int]:
     sys.stderr.write('Loading Parent Sets\n')
     rows = sqlqueries.get_parent_sets(conn, None)
     timer.time('sqlparents', len(rows))
-    parentsets: MD[Tuple[int, str], int] = {}
+    parentsets: Dict[Tuple[int, str], int] = {}
 
     for row in rows:
         parentsets[(int(row[1]), row[2])] = int(row[0])
@@ -270,11 +270,11 @@ def parentsets(conn: DBConnection,
 
 def software(conn: DBConnection,
              timer: Timer
-             ) -> MD[str, int]:
+             ) -> Dict[str, int]:
     sys.stderr.write('Loading Software\n')
     rows = sqlqueries.get_software(conn, None)
     timer.time('sqlsoftware', len(rows))
-    software: MD[str, int] = {}
+    software: Dict[str, int] = {}
 
     for row in rows:
         software[row[1]] = int(row[0])
@@ -286,11 +286,11 @@ def software(conn: DBConnection,
 
 def bodydesigs(conn: DBConnection,
                timer: Timer
-               ) -> MD[str, Tuple[int, int]]:
+               ) -> Dict[str, Tuple[int, int]]:
     sys.stderr.write('Loading Body Designations\n')
     rows = sqlqueries.get_body_designations(conn, None)
     timer.time('sqlbodydesigs', len(rows))
-    bodydesigs: MD[str, Tuple[int, int]] = {}
+    bodydesigs: Dict[str, Tuple[int, int]] = {}
 
     for row in rows:
         bodydesigs[row[1]] = (int(row[0]), int(row[2]))
@@ -302,11 +302,11 @@ def bodydesigs(conn: DBConnection,
 
 def namedbodies(conn: DBConnection,
                 timer: Timer
-                ) -> MD[int, MD[str, ML[EDDNBody]]]:
+                ) -> Dict[int, Dict[str, List[EDDNBody]]]:
     sys.stderr.write('Loading Named Bodies\n')
     rows = sqlqueries.get_named_bodies(conn, None)
     timer.time('sqlbodyname', len(rows))
-    namedbodies: MD[int, MD[str, ML[EDDNBody]]] = {}
+    namedbodies: Dict[int, Dict[str, List[EDDNBody]]] = {}
 
     for row in rows:
         bi = EDDNBody(
@@ -341,11 +341,11 @@ def namedbodies(conn: DBConnection,
 
 def namedsystems(conn: DBConnection,
                  timer: Timer
-                 ) -> MD[str, ML[EDDNSystem]]:
+                 ) -> Dict[str, List[EDDNSystem]]:
     sys.stderr.write('Loading Named Systems\n')
     rows = sqlqueries.get_named_systems(conn, None)
     timer.time('sqlname', len(rows))
-    namedsystems: MD[str, ML[EDDNSystem]] = {}
+    namedsystems: Dict[str, List[EDDNSystem]] = {}
 
     for row in rows:
         si = EDDNSystem(
@@ -372,12 +372,12 @@ def namedsystems(conn: DBConnection,
 
 def regions(conn: DBConnection,
             timer: Timer
-            ) -> Tuple[MD[str, EDDNRegion], MD[int, EDDNRegion]]:
+            ) -> Tuple[Dict[str, EDDNRegion], Dict[int, EDDNRegion]]:
     sys.stderr.write('Loading Regions\n')
     rows = sqlqueries.get_regions(conn, None)
     timer.time('sqlregion', len(rows))
-    regions: MD[str, EDDNRegion] = {}
-    regionaddrs: MD[int, EDDNRegion] = {}
+    regions: Dict[str, EDDNRegion] = {}
+    regionaddrs: Dict[int, EDDNRegion] = {}
 
     for row in rows:
         ri = EDDNRegion(
@@ -405,11 +405,11 @@ def regions(conn: DBConnection,
 
 def factions(conn: DBConnection,
              timer: Timer
-             ) -> MD[str, ML[EDDNFaction]]:
+             ) -> Dict[str, List[EDDNFaction]]:
     sys.stderr.write('Loading Factions\n')
     rows = sqlqueries.get_factions(conn, None)
     timer.time('sqlfactions')
-    factions: MD[str, ML[EDDNFaction]] = {}
+    factions: Dict[str, List[EDDNFaction]] = {}
 
     for row in rows:
         fi = EDDNFaction(row[0], row[1], row[2], row[3])
@@ -429,10 +429,10 @@ def factions(conn: DBConnection,
 def knownbodies(conn: DBConnection,
                 timer: Timer,
                 config: Config,
-                bodydesigs: MD[str, Tuple[int, int]]
-                ) -> MD[str, MD[str, ML[KnownBody]]]:
+                bodydesigs: Dict[str, Tuple[int, int]]
+                ) -> Dict[str, Dict[str, List[KnownBody]]]:
     sys.stderr.write('Loading Known Bodies\n')
-    knownbodies: MD[str, MD[str, ML[KnownBody]]] = {}
+    knownbodies: Dict[str, Dict[str, List[KnownBody]]] = {}
 
     with urllib.request.urlopen(config.known_bodies_sheet_uri) as f:
         line: bytes

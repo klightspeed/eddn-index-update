@@ -133,6 +133,8 @@ class ProcessorArgs(Protocol):
     eddb_systems: bool
     eddb_stations: bool
     no_eddn: bool
+    process_title_progress: bool
+    config_file: str
 
 
 class KnownBody(TypedDict):

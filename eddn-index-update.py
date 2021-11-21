@@ -6,6 +6,7 @@ from eddnindex.config import Config
 from eddnindex.timer import Timer
 import eddnindex.processing.main as process
 from eddnindex.proctitleprogress import update_title_progress
+from eddnindex.types import ProcessorArgs
 
 
 def unhandledexception(exctype, excvalue, traceback):
@@ -68,54 +69,54 @@ def main():
     )
 
     argparser.add_argument(
-        '--edsmmissingbodies', dest='edsmmissingbodies',
+        '--edsm-missing-bodies', dest='edsm_missing_bodies',
         action='store_const', const=True, default=False,
         help='Process EDSM missing bodies'
     )
 
     argparser.add_argument(
-        '--edsmstations', dest='edsmstations',
+        '--edsm-stations', dest='edsm_stations',
         action='store_const', const=True, default=False,
         help='Process EDSM stations dump'
     )
 
     argparser.add_argument(
-        '--eddbsys', dest='eddbsys',
+        '--eddb-systems', dest='eddb_systems',
         action='store_const', const=True, default=False,
         help='Process EDDB systems dump'
     )
 
     argparser.add_argument(
-        '--eddbstations', dest='eddbstations',
+        '--eddb-stations', dest='eddb_stations',
         action='store_const', const=True, default=False,
         help='Process EDDB stations dump'
     )
 
     argparser.add_argument(
-        '--noeddn', dest='noeddn',
+        '--no-eddn', dest='no_eddn',
         action='store_const', const=True, default=False,
         help='Skip EDDN processing'
     )
 
     argparser.add_argument(
-        '--processtitleprogress', dest='proctitleprogress',
+        '--process-title-progress', dest='process_title_progress',
         action='store_const', const=True, default=False,
         help='Update process title with progress'
     )
 
     argparser.add_argument(
-        '--configfile', dest='configfile',
+        '--config-file', dest='config_file',
         default=None,
         help='Configuration file'
     )
 
-    args = argparser.parse_args()
+    args: ProcessorArgs = argparser.parse_args()
 
-    config = Config('eddn-index-update.ini', args.configfile)
+    config = Config('eddn-index-update.ini', args.config_file)
 
     sys.excepthook = unhandledexception
 
-    if args.proctitleprogress:
+    if args.process_title_progress:
         titleprogress = update_title_progress
     else:
         titleprogress = dummytitleprogress
