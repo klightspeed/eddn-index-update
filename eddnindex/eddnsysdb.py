@@ -175,8 +175,8 @@ class EDDNSysDB(object):
                           timer: Timer,
                           scanbodyid: int,
                           system: EDDNSystem,
-                          bodyid: int,
-                          parents: List[Dict]
+                          bodyid: Optional[int],
+                          parents: Optional[List[Dict]]
                           ):
         if parents is not None and bodyid is not None:
             parentjson = json.dumps(parents)
