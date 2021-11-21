@@ -4,7 +4,6 @@ import bz2
 from typing import Any, Callable
 from collections.abc import MutableMapping as Dict
 
-from ..config import Config
 from ..types import Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
@@ -16,10 +15,10 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            edsm_systems_without_coords_file: str
             ):
     sys.stderr.write('Processing EDSM systems without coords\n')
-    with bz2.BZ2File(config.edsm_systems_without_coords_file, 'r') as f:
+    with bz2.BZ2File(edsm_systems_without_coords_file, 'r') as f:
         w = 0
         for i, line in enumerate(f):
             timer.time('read')

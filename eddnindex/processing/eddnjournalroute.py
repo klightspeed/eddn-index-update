@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from typing import Callable, Tuple
 from collections.abc import MutableSequence as List
 
-from ..config import Config
 from ..types import EDDNFile, EDDNSystem, Writable
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
@@ -22,7 +21,7 @@ def process(sysdb: EDDNSysDB,
             reprocess: bool,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            eddn_dir: str
             ):
     # if fileinfo.eventtype in ('Location'):
     #     continue
@@ -40,7 +39,7 @@ def process(sysdb: EDDNSysDB,
             or (reprocess is True
                 and route_system_count != nav_route_system_count)):
         fn = os.path.join(
-            config.eddn_dir,
+            eddn_dir,
             fileinfo.date.isoformat()[:7],
             filename
         )

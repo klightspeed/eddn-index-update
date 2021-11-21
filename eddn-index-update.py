@@ -112,7 +112,8 @@ def main():
 
     args: ProcessorArgs = argparser.parse_args()
 
-    config = Config('eddn-index-update.ini', args.config_file)
+    config = Config()
+    config.load('eddn-index-update.ini', args.config_file)
 
     sys.excepthook = unhandledexception
 

@@ -4,7 +4,6 @@ import bz2
 from typing import Any, Callable
 from collections.abc import MutableMapping as Dict
 
-from ..config import Config
 from ..types import Writable
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
@@ -15,10 +14,9 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            filename: str
             ):
     sys.stderr.write('Processing pre-purge EDSM systems without coords\n')
-    filename = config.edsm_systems_without_coords_pre_purge_file
 
     with bz2.BZ2File(filename, 'r') as f:
         w = 0

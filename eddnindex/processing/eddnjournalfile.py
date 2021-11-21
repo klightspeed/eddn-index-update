@@ -5,11 +5,10 @@ import json
 import bz2
 import math
 from datetime import datetime, timedelta
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, Optional, Tuple
 from collections.abc import MutableSequence as List
 
-from ..config import Config
-from ..types import EDDNFaction, EDDNFile, EDDNStation, Writable
+from ..types import EDDNFaction, EDDNFile, EDDNStation, EDDNSystem, Writable
 from .. import constants
 from ..constants import ed_3_0_3_date, ed_3_0_4_date
 from ..eddnsysdb import EDDNSysDB
@@ -25,7 +24,8 @@ def process(sysdb: EDDNSysDB,
             reprocessall: bool,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            eddn_dir: str,
+            allow_3_0_3_bodies: bool
             ):
     # if fileinfo.eventtype in ('Location'):
     #     continue
@@ -52,7 +52,7 @@ def process(sysdb: EDDNSysDB,
                          and station_file_line_count != station_line_count)
                      or populated_line_count != faction_file_line_count))):
         fn = os.path.join(
-            config.eddn_dir,
+            eddn_dir,
             fileinfo.date.isoformat()[:7],
             filename
         )
@@ -85,7 +85,6 @@ def process(sysdb: EDDNSysDB,
                         fileinfo,
                         reprocessall,
                         rejectout,
-                        config,
                         stnlines,
                         infolines,
                         factionlines,
@@ -96,7 +95,8 @@ def process(sysdb: EDDNSysDB,
                         factionstoinsert,
                         lineno,
                         line,
-                        event_type
+                        event_type,
+                        allow_3_0_3_bodies
                     )
 
                     linecount += 1
@@ -170,7 +170,6 @@ def process_line(sysdb: EDDNSysDB,
                  fileinfo: EDDNFile,
                  reprocessall: bool,
                  rejectout: Writable,
-                 config: Config,
                  stnlines,
                  infolines,
                  factionlines,
@@ -184,7 +183,8 @@ def process_line(sysdb: EDDNSysDB,
                  factionstoinsert: List[Tuple[int, int, EDDNFaction, int]],
                  lineno: int,
                  line: bytes,
-                 event_type: str
+                 event_type: str,
+                 allow_3_0_3_bodies: bool
                  ):
     if ((lineno + 1) not in infolines
             or (reprocessall is True and event_type == 'Scan')):
@@ -255,12 +255,15 @@ def process_line(sysdb: EDDNSysDB,
                     or marketid is not None):
                 stnlinecount += 1
 
-            if (sqltimestamp is not None
-                    and sqlgwtimestamp is not None
-                    and sqltimestamp < sqlgwtimestamp + timedelta(days=1)):
-                process_event(
+            if (sqltimestamp is None
+                    or sqlgwtimestamp is None
+                    or sqltimestamp > sqlgwtimestamp + timedelta(days=1)):
+                msg['rejectReason'] = 'Timestamp error'
+                rejectout.write(json.dumps(msg) + '\n')
+            else:
+                reject, rejectreason, rejectdata = process_event(
                     sysdb, timer, fileinfo, reprocessall, rejectout,
-                    config, stnlines, infolines, factionlines,
+                    stnlines, infolines, factionlines,
                     stntoinsert, infotoinsert, factionstoinsert,
                     lineno, msg, body, eventtype, sysname, starpos,
                     sysaddr, stationname, marketid, stationtype,
@@ -268,11 +271,13 @@ def process_line(sysdb: EDDNSysDB,
                     parents, factions, sysfaction, sysgovern,
                     sysalleg, stnfaction, stngovern, software,
                     distfromstar, sqltimestamp, sqlgwtimestamp,
-                    linelen
+                    linelen, allow_3_0_3_bodies
                 )
-            else:
-                msg['rejectReason'] = 'Timestamp error'
-                rejectout.write(json.dumps(msg) + '\n')
+
+                if reject:
+                    msg['rejectReason'] = rejectreason
+                    msg['rejectData'] = rejectdata
+                    rejectout.write(json.dumps(msg) + '\n')
 
 
 def process_event(sysdb: EDDNSysDB,
@@ -280,7 +285,6 @@ def process_event(sysdb: EDDNSysDB,
                   fileinfo: EDDNFile,
                   reprocessall: bool,
                   rejectout: Writable,
-                  config: Config,
                   stnlines,
                   infolines,
                   factionlines,
@@ -295,11 +299,13 @@ def process_event(sysdb: EDDNSysDB,
                   bodyname, bodyid, bodytype, scanbodyname, parents,
                   factions, sysfaction, sysgovern, sysalleg,
                   stnfaction, stngovern, software, distfromstar,
-                  sqltimestamp, sqlgwtimestamp, linelen
+                  sqltimestamp, sqlgwtimestamp, linelen,
+                  allow_3_0_3_bodies: bool
                   ):
     starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in starpos]
     reject_data: Any
     reject = False
+    system: Optional[EDDNSystem]
 
     (system, reject_reason, reject_data) = sysdb.getsystem(
         timer,
@@ -311,249 +317,303 @@ def process_event(sysdb: EDDNSysDB,
     )
 
     timer.time('sysquery')
-    if system is not None:
-        systemid = system.id
-        sysbodyid: int = 0
 
-        if ((lineno + 1) not in stnlines
-                and sqltimestamp is not None
-                and not (ed_3_0_3_date <= sqltimestamp < ed_3_0_4_date
-                         and not config.allow_3_0_3_bodies)):
-            if stationname is not None and stationname != '':
-                (station, reject_reason, reject_data) = sysdb.getstation(
-                    timer,
-                    stationname,
-                    sysname,
-                    marketid,
-                    sqltimestamp,
-                    system,
-                    stationtype,
-                    bodyname,
-                    bodyid,
-                    bodytype,
-                    eventtype,
-                    fileinfo.test
-                )
+    if system is None:
+        return True, reject_reason, reject_data
 
-                timer.time('stnquery')
+    systemid = system.id
+    sysbodyid: int = 0
 
-                if station is not None:
-                    stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                else:
-                    reject = True
-            elif (bodyname is not None and bodytype in ['Station']):
-                (station, reject_reason, reject_data) = sysdb.getstation(
-                    timer,
-                    bodyname,
-                    sysname,
-                    None,
-                    sqltimestamp,
-                    system=system,
-                    bodyid=bodyid,
-                    eventtype=eventtype,
-                    test=fileinfo.test
-                )
+    usebodies = not (ed_3_0_3_date <= sqltimestamp < ed_3_0_4_date)
+    usebodies |= allow_3_0_3_bodies
 
-                timer.time('stnquery')
+    if usebodies:
+        if (lineno + 1) not in stnlines:
+            reject, reject_reason, reject_data = process_station(
+                sysdb,
+                timer,
+                fileinfo,
+                stntoinsert,
+                lineno,
+                eventtype,
+                sysname,
+                stationname,
+                marketid,
+                stationtype,
+                bodyname,
+                bodyid,
+                bodytype,
+                sqltimestamp,
+                system
+            )
 
-                if station is not None:
-                    stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                else:
-                    reject = True
+            if reject:
+                return True, reject_reason, reject_data
 
-        if ((lineno + 1) not in infolines
-                and sqltimestamp is not None
-                and not (ed_3_0_3_date <= sqltimestamp < ed_3_0_4_date
-                         and not config.allow_3_0_3_bodies)):
-            if scanbodyname is not None:
-                (scanbody, reject_reason, reject_data) = sysdb.getbody(
-                    timer,
-                    scanbodyname,
-                    sysname,
-                    bodyid,
-                    system,
-                    body,
-                    sqltimestamp
-                )
+        if reprocessall is True or (lineno + 1) not in infolines:
+            sysbodyid, reject, reject_reason, reject_data = process_body(
+                sysdb,
+                timer,
+                body,
+                sysname,
+                bodyname,
+                bodyid,
+                bodytype,
+                scanbodyname,
+                parents,
+                sqltimestamp,
+                system
+            )
 
-                if scanbody is not None:
-                    sysdb.insertbodyparents(
-                        timer,
-                        scanbody.id,
-                        system,
-                        bodyid,
-                        parents
-                    )
+            if reject:
+                return True, reject_reason, reject_data
 
-                    sysbodyid = scanbody.id
-                else:
-                    reject = True
-                timer.time('bodyquery')
-            elif bodyname is not None and bodytype not in ['Station']:
-                (scanbody, reject_reason, reject_data) = sysdb.getbody(
-                    timer,
-                    bodyname,
-                    sysname,
-                    bodyid,
-                    system,
-                    {},
-                    sqltimestamp
-                )
-
-                if scanbody is not None:
-                    sysbodyid = scanbody.id
-                else:
-                    reject = True
-                timer.time('bodyquery')
-        elif ((reprocessall is True or (lineno + 1) not in infolines)
-                and sqltimestamp is not None
-                and not (ed_3_0_3_date <= sqltimestamp < ed_3_0_4_date
-                         and not config.allow_3_0_3_bodies)
-              ):
-            if scanbodyname is not None:
-                (scanbody, reject_reason, reject_data) = sysdb.getbody(
-                    timer,
-                    scanbodyname,
-                    sysname,
-                    bodyid,
-                    system,
-                    body,
-                    sqltimestamp
-                )
-
-                if scanbody is not None:
-                    sysbodyid = scanbody.id
-                    sysdb.insertbodyparents(
-                        timer,
-                        scanbody.id,
-                        system,
-                        bodyid,
-                        parents
-                    )
-                else:
-                    reject = True
-
-                timer.time('bodyquery')
-
-            elif bodyname is not None and bodytype not in ['Station']:
-                (scanbody, reject_reason, reject_data) = sysdb.getbody(
-                    timer,
-                    bodyname,
-                    sysname,
-                    bodyid,
-                    system,
-                    {},
-                    sqltimestamp
-                )
-
-                if scanbody is not None:
-                    sysbodyid = scanbody.id
-                else:
-                    reject = True
-
-                timer.time('bodyquery')
-
-        if (lineno + 1) not in factionlines and not reject:
-            linefactions = []
-            linefactiondata = []
-            if factions is not None:
-                for n, faction in enumerate(factions):
-                    linefactiondata += [{
-                        'Name': faction['Name'],
-                        'Government': faction['Government'],
-                        'Allegiance': faction.get('Allegiance'),
-                        'EntryNum': n
-                    }]
-
-                    linefactions += [(
-                        n,
-                        sysdb.getfaction(
-                            timer,
-                            faction['Name'],
-                            faction['Government'],
-                            faction.get('Allegiance'))
-                        )
-                    ]
-
-            if sysfaction is not None:
-                if type(sysfaction) is dict and 'Name' in sysfaction:
-                    sysfaction = sysfaction['Name']
-                linefactiondata += [{
-                    'Name': sysfaction,
-                    'Government': sysgovern,
-                    'Allegiance': sysalleg,
-                    'EntryNum': -1
-                }]
-
-                linefactions += [(
-                    -1,
-                    sysdb.getfaction(
-                        timer,
-                        sysfaction,
-                        sysgovern,
-                        sysalleg
-                    )
-                )]
-
-            if stnfaction is not None:
-                if type(stnfaction) is dict and 'Name' in stnfaction:
-                    stnfaction = stnfaction['Name']
-                if stnfaction != 'FleetCarrier':
-                    linefactiondata += [{
-                        'Name': stnfaction,
-                        'Government': stngovern,
-                        'EntryNum': -2
-                    }]
-
-                    linefactions += [(
-                        -2,
-                        sysdb.getfaction(
-                            timer,
-                            stnfaction,
-                            stngovern,
-                            None
-                        )
-                    )]
-
-            if len(linefactions) != 0:
-                if len([fid for n, fid in linefactions if fid is None]) != 0:
-                    reject = True
-                    reject_reason = 'Faction not found'
-                    reject_data = linefactiondata
-                else:
-                    for n, faction in linefactions:
-                        factionstoinsert += [(
-                            fileinfo.id,
-                            lineno + 1,
-                            faction,
-                            n
-                        )]
-
-            timer.time('factionupdate')
+    if (lineno + 1) not in factionlines:
+        reject_data, reject, reject_reason = process_factions(
+            sysdb,
+            timer,
+            fileinfo,
+            factionstoinsert,
+            lineno,
+            factions,
+            sysfaction,
+            sysgovern,
+            sysalleg,
+            stnfaction,
+            stngovern
+        )
 
         if reject:
-            msg['rejectReason'] = reject_reason
-            msg['rejectData'] = reject_data
-            rejectout.write(json.dumps(msg) + '\n')
+            return True, reject_reason, reject_data
+
+    if (lineno + 1) not in infolines:
+        sysdb.insertsoftware(software)
+        infotoinsert.append((
+            fileinfo.id,
+            lineno + 1,
+            sqltimestamp,
+            sqlgwtimestamp,
+            sysdb.software[software],
+            systemid,
+            sysbodyid,
+            linelen,
+            distfromstar,
+            1 if 'BodyID' in body else 0,
+            1 if 'SystemAddress' in body else 0,
+            1 if 'MarketID' in body else 0
+        ))
+
+
+def process_factions(sysdb: EDDNSysDB,
+                     timer: Timer,
+                     fileinfo: EDDNFile,
+                     factionstoinsert,
+                     lineno: int,
+                     factions,
+                     sysfaction,
+                     sysgovern,
+                     sysalleg,
+                     stnfaction,
+                     stngovern
+                     ):
+    linefactions = []
+    linefactiondata = []
+    reject = False
+
+    if factions is not None:
+        for n, faction in enumerate(factions):
+            linefactiondata += [{
+                'Name': faction['Name'],
+                'Government': faction['Government'],
+                'Allegiance': faction.get('Allegiance'),
+                'EntryNum': n
+            }]
+
+            linefactions += [(
+                n,
+                sysdb.getfaction(
+                    timer,
+                    faction['Name'],
+                    faction['Government'],
+                    faction.get('Allegiance'))
+                )
+            ]
+
+    if sysfaction is not None:
+        if type(sysfaction) is dict and 'Name' in sysfaction:
+            sysfaction = sysfaction['Name']
+        linefactiondata += [{
+            'Name': sysfaction,
+            'Government': sysgovern,
+            'Allegiance': sysalleg,
+            'EntryNum': -1
+        }]
+
+        linefactions += [(
+            -1,
+            sysdb.getfaction(
+                timer,
+                sysfaction,
+                sysgovern,
+                sysalleg
+            )
+        )]
+
+    if stnfaction is not None:
+        if type(stnfaction) is dict and 'Name' in stnfaction:
+            stnfaction = stnfaction['Name']
+        if stnfaction != 'FleetCarrier':
+            linefactiondata += [{
+                'Name': stnfaction,
+                'Government': stngovern,
+                'EntryNum': -2
+            }]
+
+            linefactions += [(
+                -2,
+                sysdb.getfaction(
+                    timer,
+                    stnfaction,
+                    stngovern,
+                    None
+                )
+            )]
+
+    if len(linefactions) != 0:
+        if len([fid for n, fid in linefactions if fid is None]) != 0:
+            reject = True
+            reject_reason = 'Faction not found'
+            reject_data = linefactiondata
         else:
-            if (lineno + 1) not in infolines:
-                sysdb.insertsoftware(software)
-                infotoinsert.append((
+            for n, faction in linefactions:
+                factionstoinsert += [(
                     fileinfo.id,
                     lineno + 1,
-                    sqltimestamp,
-                    sqlgwtimestamp,
-                    sysdb.software[software],
-                    systemid,
-                    sysbodyid,
-                    linelen,
-                    distfromstar,
-                    1 if 'BodyID' in body else 0,
-                    1 if 'SystemAddress' in body else 0,
-                    1 if 'MarketID' in body else 0
-                ))
+                    faction,
+                    n
+                )]
 
-    else:
-        msg['rejectReason'] = reject_reason
-        msg['rejectData'] = reject_data
-        rejectout.write(json.dumps(msg) + '\n')
+    timer.time('factionupdate')
+    return reject_data, reject, reject_reason
+
+
+def process_body(sysdb: EDDNSysDB,
+                 timer: Timer,
+                 body,
+                 sysname: str,
+                 bodyname: str,
+                 bodyid: Optional[int],
+                 bodytype: str,
+                 scanbodyname: str,
+                 parents,
+                 sqltimestamp: datetime,
+                 system: EDDNSystem
+                 ):
+    if scanbodyname is not None:
+        (scanbody, reject_reason, reject_data) = sysdb.getbody(
+            timer,
+            scanbodyname,
+            sysname,
+            bodyid,
+            system,
+            body,
+            sqltimestamp
+        )
+
+        if scanbody is not None:
+            sysdb.insertbodyparents(
+                timer,
+                scanbody.id,
+                system,
+                bodyid,
+                parents
+            )
+
+            sysbodyid = scanbody.id
+        else:
+            reject = True
+        timer.time('bodyquery')
+    elif bodyname is not None and bodytype not in ['Station']:
+        (scanbody, reject_reason, reject_data) = sysdb.getbody(
+            timer,
+            bodyname,
+            sysname,
+            bodyid,
+            system,
+            {},
+            sqltimestamp
+        )
+
+        if scanbody is not None:
+            sysbodyid = scanbody.id
+        else:
+            reject = True
+
+        timer.time('bodyquery')
+
+    return sysbodyid, reject, reject_reason, reject_data
+
+
+def process_station(sysdb: EDDNSysDB,
+                    timer: Timer,
+                    fileinfo: EDDNFile,
+                    stntoinsert,
+                    lineno: int,
+                    eventtype: str,
+                    sysname: str,
+                    stationname: str,
+                    marketid: Optional[int],
+                    stationtype: str,
+                    bodyname: Optional[str],
+                    bodyid: Optional[int],
+                    bodytype: Optional[str],
+                    sqltimestamp: datetime,
+                    system: EDDNSystem
+                    ):
+    reject = False
+    reject_data = None
+    reject_reason = None
+
+    if stationname is not None and stationname != '':
+        (station, reject_reason, reject_data) = sysdb.getstation(
+            timer,
+            stationname,
+            sysname,
+            marketid,
+            sqltimestamp,
+            system,
+            stationtype,
+            bodyname,
+            bodyid,
+            bodytype,
+            eventtype,
+            fileinfo.test
+        )
+
+        timer.time('stnquery')
+
+        if station is not None:
+            stntoinsert += [(fileinfo.id, lineno + 1, station)]
+        else:
+            reject = True
+    elif bodyname is not None and bodytype in ['Station']:
+        (station, reject_reason, reject_data) = sysdb.getstation(
+            timer,
+            bodyname,
+            sysname,
+            None,
+            sqltimestamp,
+            system=system,
+            bodyid=bodyid,
+            eventtype=eventtype,
+            test=fileinfo.test
+        )
+
+        timer.time('stnquery')
+
+        if station is not None:
+            stntoinsert += [(fileinfo.id, lineno + 1, station)]
+        else:
+            reject = True
+
+    return reject, reject_reason, reject_data

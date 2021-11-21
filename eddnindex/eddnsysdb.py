@@ -20,7 +20,6 @@ from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, \
 from .timer import Timer
 from . import constants
 from .util import from_db_string
-from .config import Config
 from . import sqlqueries
 from .database import DBConnection
 from .systems import getsystem
@@ -42,7 +41,6 @@ class EDDNSysDB(object):
     edsmbodyids: numpy.core.records.recarray
     eddbsysids: numpy.core.records.recarray
     edsmsyscachefile: str
-    knownbodiessheeturi: str
     edsmbodycachefile: str
     knownbodies: Dict[str, Dict[str, List[KnownBody]]]
 
@@ -51,7 +49,10 @@ class EDDNSysDB(object):
                  loadedsmsys: bool,
                  loadedsmbodies: bool,
                  loadeddbsys: bool,
-                 config: Config):
+                 edsm_systems_cache_file: str,
+                 edsm_bodies_cache_file: str,
+                 known_bodies_sheet_uri: str
+                 ):
         timer = Timer()
 
         try:
@@ -72,9 +73,8 @@ class EDDNSysDB(object):
                 DTypeEDDBSystem
             ).view(numpy.core.records.recarray)
 
-            self.edsmsyscachefile = config.edsm_systems_cache_file
-            self.knownbodiessheeturi = config.known_bodies_sheet_uri
-            self.edsmbodycachefile = config.edsm_bodies_cache_file
+            self.edsmsyscachefile = edsm_systems_cache_file
+            self.edsmbodycachefile = edsm_bodies_cache_file
 
             (self.regions, self.regionaddrs) = loading.loadregions(conn, timer)
             self.namedsystems = loading.loadnamedsystems(conn, timer)
@@ -87,8 +87,8 @@ class EDDNSysDB(object):
             self.knownbodies = loading.loadknownbodies(
                 conn,
                 timer,
-                config,
-                self.bodydesigs
+                self.bodydesigs,
+                known_bodies_sheet_uri
             )
 
             if loadedsmsys or loadedsmbodies:

@@ -12,7 +12,7 @@ class DatabaseConfig(object):
     Username: str
     Password: str
 
-    def __init__(self, config: dict):
+    def load(self, config: dict):
         self.ConnectionType = config['ConnectionType']
         self.Hostname = config['Hostname']
         self.DatabaseName = config['DatabaseName']
@@ -21,42 +21,83 @@ class DatabaseConfig(object):
 
 
 class Config(object):
-    database: DatabaseConfig
-    output_dir: str
-    eddn_dir: str
-    edsm_dump_dir: str
-    edsm_bodies_dir: str
-    eddb_dir: str
-    cache_dir: str
 
+    # Used by DBConnection.open
+    database: DatabaseConfig
+
+    # Used by processing.eddnjournalfile.process
+    # Used by processing.eddnjournalroute.process
+    # Used by processing.eddnmarketfile.process
+    eddn_dir: str
+
+    # Used by processing.edsmbodies.process
+    edsm_dump_dir: str
+
+    # Used by processing.edsmbodies.process
+    # Used by processing.edsmmissingbodies.process
+    edsm_bodies_dir: str
+
+    # Used by processing.edsmsystems.process
     edsm_systems_file: str
+
+    # Used by processing.edsmsystemswithoutcoords.process
     edsm_systems_without_coords_file: str
+
+    # Used by processing.edsmsystemswithoutcoordsprepurge.process
     edsm_systems_without_coords_pre_purge_file: str
+
+    # Used by processing.edsmhiddensystems.process
     edsm_hidden_systems_file: str
+
+    # No longer used
+    # EDSM bodies file no longer generated
     edsm_bodies_file: str
+
+    # Used by processing.edsmstations.process
     edsm_stations_file: str
 
+    # Used by processing.eddbsystems.process
     eddb_systems_file: str
+
+    # Never used
     eddb_stations_file: str
 
+    # Used by loading.loadedsmsystems
+    # Used by EDDNSysDB.saveedsmsyscache
     edsm_systems_cache_file: str
+
+    # Used by loading.loadedsmbodies
+    # Used by EDDNSysDB.saveedsmbodycache
     edsm_bodies_cache_file: str
 
+    # Used by processing.main for EDDNRejectData
     eddn_reject_dir: str
+
+    # Used by processing.main for edsm*systems
     edsm_systems_reject_file: str
+
+    # Used by processing.main for edsmbodies
     edsm_bodies_reject_file: str
+
+    # Used by processing.main for edsmstations
     edsm_stations_reject_file: str
+
+    # Used by processing.main for eddbsystems
     eddb_systems_reject_file: str
+
+    # Never used
     eddb_stations_reject_file: str
 
+    # Used by loading.loadknownbodies
     known_bodies_sheet_uri: str
 
+    # Used by processing.eddnjournalfile.process_event
     allow_3_0_3_bodies: bool
 
-    def __init__(self,
-                 config_filename: str,
-                 override_config_filename: Union[str, None] = None
-                 ):
+    def load(self,
+             config_filename: str,
+             override_config_filename: Union[str, None] = None
+             ):
         config = configparser.ConfigParser(
             interpolation=configparser.ExtendedInterpolation()
         )
@@ -82,7 +123,8 @@ class Config(object):
 
         config.read(config_files)
 
-        self.database = DatabaseConfig(dict(config["Database"]))
+        self.database = DatabaseConfig()
+        self.database.load(dict(config["Database"]))
 
         paths = config['Paths']
         edsm = config['Paths/EDSM']
@@ -92,17 +134,19 @@ class Config(object):
         urls = config['URLs']
         options = config['Options']
 
-        self.output_dir = paths["Output"]
         self.eddn_dir = paths["EDDN"]
         self.edsm_dump_dir = paths["EDSMDumps"]
         self.edsm_bodies_dir = paths["EDSMBodies"]
-        self.eddb_dir = paths["EDDBDumps"]
-        self.cache_dir = paths["Cache"]
+
+        output_dir = paths["Output"]
+        edsm_dump_dir = paths["EDSMDumps"]
+        eddb_dir = paths["EDDBDumps"]
+        cache_dir = paths["Cache"]
 
         self.edsm_systems_file = edsm.get(
             'SystemsWithCoordinates',
             os.path.join(
-                self.edsm_dump_dir,
+                edsm_dump_dir,
                 'systemsWithCoordinates.jsonl.bz2'
             )
         )
@@ -110,7 +154,7 @@ class Config(object):
         self.edsm_systems_without_coords_file = edsm.get(
             'SystemsWithoutCoordinates',
             os.path.join(
-                self.edsm_dump_dir,
+                edsm_dump_dir,
                 'systemsWithoutCoordinates.jsonl.bz2'
             )
         )
@@ -118,7 +162,7 @@ class Config(object):
         self.edsm_systems_without_coords_pre_purge_file = edsm.get(
             'SystemsWithoutCoordinatesPrePurge',
             os.path.join(
-                self.edsm_dump_dir,
+                edsm_dump_dir,
                 'systemsWithoutCoordinates-2020-09-30.jsonl.bz2'
             )
         )
@@ -126,7 +170,7 @@ class Config(object):
         self.edsm_hidden_systems_file = edsm.get(
             'HiddenSystems',
             os.path.join(
-                self.edsm_dump_dir,
+                edsm_dump_dir,
                 'hiddenSystems.jsonl.bz2'
             )
         )
@@ -134,7 +178,7 @@ class Config(object):
         self.edsm_bodies_file = edsm.get(
             'Bodies',
             os.path.join(
-                self.edsm_dump_dir,
+                edsm_dump_dir,
                 'bodies.jsonl.bz2'
             )
         )
@@ -142,7 +186,7 @@ class Config(object):
         self.edsm_stations_file = edsm.get(
             'Stations',
             os.path.join(
-                self.edsm_dump_dir,
+                edsm_dump_dir,
                 'stations.json.gz'
             )
         )
@@ -150,7 +194,7 @@ class Config(object):
         self.eddb_systems_file = eddb.get(
             'Systems',
             os.path.join(
-                self.eddb_dir,
+                eddb_dir,
                 'systems.csv.bz2'
             )
         )
@@ -158,7 +202,7 @@ class Config(object):
         self.eddb_stations_file = eddb.get(
             'Stations',
             os.path.join(
-                self.eddb_dir,
+                eddb_dir,
                 'stations.jsonl'
             )
         )
@@ -166,7 +210,7 @@ class Config(object):
         self.edsm_systems_cache_file = cache.get(
             'EDSMSystems',
             os.path.join(
-                self.cache_dir,
+                cache_dir,
                 'edsmsys-index-update-syscache.bin'
             )
         )
@@ -174,7 +218,7 @@ class Config(object):
         self.edsm_bodies_cache_file = cache.get(
             'EDSMBodies',
             os.path.join(
-                self.cache_dir,
+                cache_dir,
                 'edsmbody-index-update-bodycache.bin'
             )
         )
@@ -182,7 +226,7 @@ class Config(object):
         self.eddn_reject_dir = rejects.get(
             'EDDN',
             os.path.join(
-                self.output_dir,
+                output_dir,
                 'eddn-index-update-reject'
             )
         )
@@ -190,7 +234,7 @@ class Config(object):
         self.edsm_systems_reject_file = rejects.get(
             'EDSMSystems',
             os.path.join(
-                self.output_dir,
+                output_dir,
                 'edsmsys-index-update-reject.jsonl'
             )
         )
@@ -198,7 +242,7 @@ class Config(object):
         self.edsm_bodies_reject_file = rejects.get(
             'EDSMBodies',
             os.path.join(
-                self.output_dir,
+                output_dir,
                 'edsmbodies-index-update-reject.jsonl'
             )
         )
@@ -206,7 +250,7 @@ class Config(object):
         self.edsm_stations_reject_file = rejects.get(
             'EDSMStations',
             os.path.join(
-                self.output_dir,
+                output_dir,
                 'edsmstations-index-update-reject.jsonl'
             )
         )
@@ -214,7 +258,7 @@ class Config(object):
         self.eddb_systems_reject_file = rejects.get(
             'EDDBSystems',
             os.path.join(
-                self.output_dir,
+                output_dir,
                 'eddbsys-index-update-reject.jsonl'
             )
         )
@@ -222,18 +266,14 @@ class Config(object):
         self.eddb_stations_reject_file = rejects.get(
             'EDDBStations',
             os.path.join(
-                self.output_dir,
+                output_dir,
                 'eddbstations-index-update-reject.jsonl'
             )
         )
 
         self.known_bodies_sheet_uri = urls.get(
             'KnownBodies',
-            'https://docs.google.com/spreadsheets/d/e/'
-            '2PACX-1vR9lEav_Bs8rZGRtwcwuOwQ2hIoiNJ_PWY'
-            'AEgXk7E3Y-UD0r6uER04y4VoQxFAAdjMS4oipPyyS'
-            'oC3t/pub'
-            '?gid=711269421&single=true&output=tsv'
+            'https://docs.google.com/spreadsheets/d/e/2PACX-1vR9lEav_Bs8rZGRtwcwuOwQ2hIoiNJ_PWYAEgXk7E3Y-UD0r6uER04y4VoQxFAAdjMS4oipPyySoC3t/pub?gid=711269421&single=true&output=tsv'  # noqa: E501
         )
 
         self.allow_3_0_3_bodies = options.getboolean(

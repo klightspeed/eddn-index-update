@@ -5,7 +5,6 @@ import math
 from typing import Any, Callable
 from collections.abc import MutableMapping as Dict
 
-from ..config import Config
 from ..types import Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
@@ -17,7 +16,7 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            edsm_systems_file: str
             ):
     sys.stderr.write('Processing EDSM systems\n')
     for i, rec in enumerate(sysdb.edsmsysids):
@@ -26,7 +25,7 @@ def process(sysdb: EDDNSysDB,
 
     i = 0
 
-    with bz2.BZ2File(config.edsm_systems_file, 'r') as f:
+    with bz2.BZ2File(edsm_systems_file, 'r') as f:
         w = 0
         for i, line in enumerate(f):
             timer.time('read')

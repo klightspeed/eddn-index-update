@@ -3,7 +3,6 @@ import json
 import bz2
 from typing import Callable
 
-from ..config import Config
 from ..types import Writable
 from ..eddnsysdb import EDDNSysDB
 from ..timer import Timer
@@ -13,10 +12,10 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            edsm_hidden_systems_file: str
             ):
     sys.stderr.write('Processing EDSM hidden systems\n')
-    with bz2.BZ2File(config.edsm_hidden_systems_file, 'r') as f:
+    with bz2.BZ2File(edsm_hidden_systems_file, 'r') as f:
         w = 0
         for i, line in enumerate(f):
             timer.time('read')

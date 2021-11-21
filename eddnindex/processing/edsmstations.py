@@ -4,7 +4,6 @@ import gzip
 from typing import Callable, Any
 from collections.abc import MutableMapping as Dict
 
-from ..config import Config
 from ..types import EDSMStation, Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
@@ -16,10 +15,10 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            edsm_stations_file: str
             ):
     sys.stderr.write('Processing EDSM stations\n')
-    with gzip.open(config.edsm_stations_file, 'r') as f:
+    with gzip.open(edsm_stations_file, 'r') as f:
         stations = json.load(f)
         w = 0
         for i, msg in enumerate(stations):

@@ -10,7 +10,6 @@ import time
 from collections.abc import MutableSequence as List, \
                             MutableMapping as Dict
 
-from ..config import Config
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
@@ -81,7 +80,7 @@ def getbodiesfromedsmbyid(edsmid: int, timer: Timer) -> List[EDSMBody]:
 def process(sysdb: EDDNSysDB,
             timer: Timer,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            edsm_bodies_dir: str
             ):
     sys.stderr.write('Processing EDSM missing bodies\n')
     w = 0
@@ -93,7 +92,7 @@ def process(sysdb: EDDNSysDB,
 
     timer.time('bodyquery')
 
-    filename = os.path.join(config.edsm_bodies_dir, fn)
+    filename = os.path.join(edsm_bodies_dir, fn)
 
     with open(filename, 'w', encoding='utf-8') as f:
         linecount = 0

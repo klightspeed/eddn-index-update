@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from typing import Callable, Tuple
 from collections.abc import MutableSequence as List
 
-from ..config import Config
 from ..types import EDDNFile, EDDNStation, Writable
 from ..eddnsysdb import EDDNSysDB
 from ..util import timestamp_to_datetime
@@ -21,14 +20,14 @@ def process(sysdb: EDDNSysDB,
             reprocess: bool,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            eddn_dir: str
             ):
     if (fileinfo.line_count is None
         or (reprocess is True
             and (fileinfo.line_count != fileinfo.station_file_line_count
                  or fileinfo.line_count != fileinfo.info_file_line_count))):
         fn = os.path.join(
-            config.eddn_dir,
+            eddn_dir,
             fileinfo.date.isoformat()[:7],
             filename
         )

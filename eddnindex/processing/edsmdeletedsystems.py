@@ -7,7 +7,6 @@ import json
 import time
 import math
 
-from ..config import Config
 from ..types import Writable
 from ..eddnsysdb import EDDNSysDB
 from ..timer import Timer
@@ -114,8 +113,7 @@ def updatesystemfromedsmbyid(sysdb: EDDNSysDB,
 def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
-            updatetitleprogress: Callable[[str], None],
-            _: Config
+            updatetitleprogress: Callable[[str], None]
             ):
     sys.stderr.write('Processing EDSM deleted systems\n')
     w = 0

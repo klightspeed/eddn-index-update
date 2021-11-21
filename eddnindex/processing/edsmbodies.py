@@ -6,7 +6,6 @@ import bz2
 from typing import Any, Callable, Tuple
 from collections.abc import MutableSequence as List
 
-from ..config import Config
 from ..types import EDSMFile, Writable
 from .. import constants
 from ..eddnsysdb import EDDNSysDB
@@ -21,7 +20,8 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            edsm_bodies_dir: str,
+            edsm_dump_dir: str
             ):
     fn = None
 
@@ -32,12 +32,12 @@ def process(sysdb: EDDNSysDB,
 
     if date is not None:
         fn = os.path.join(
-            config.edsm_bodies_dir,
+            edsm_bodies_dir,
             date.isoformat()[:7],
             filename
         )
 
-    dumpfile = os.path.join(config.edsm_dump_dir, filename)
+    dumpfile = os.path.join(edsm_dump_dir, filename)
     if os.path.exists(dumpfile):
         fn = dumpfile
 

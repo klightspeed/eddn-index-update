@@ -6,7 +6,6 @@ import csv
 from typing import Any, Callable
 from collections.abc import MutableMapping as Dict
 
-from ..config import Config
 from ..types import Writable
 from ..eddnsysdb import EDDNSysDB
 from ..timer import Timer
@@ -16,10 +15,10 @@ def process(sysdb: EDDNSysDB,
             timer: Timer,
             rejectout: Writable,
             updatetitleprogress: Callable[[str], None],
-            config: Config
+            eddb_systems_file: str
             ):
     sys.stderr.write('Processing EDDB systems\n')
-    with bz2.open(config.eddb_systems_file, 'rt', encoding='utf8') as f:
+    with bz2.open(eddb_systems_file, 'rt', encoding='utf8') as f:
         csvreader = csv.DictReader(f)
         w = 0
         linecount = 0

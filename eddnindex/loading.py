@@ -15,7 +15,6 @@ from .types import EDDNSystem, EDDNBody, EDDNFaction, \
                    EDDNRegion, DTypeEDSMSystem, \
                    DTypeEDDBSystem, DTypeEDSMBody, KnownBody
 from .timer import Timer
-from .config import Config
 from . import sqlqueries
 from .database import DBConnection
 
@@ -428,13 +427,13 @@ def loadfactions(conn: DBConnection,
 
 def loadknownbodies(conn: DBConnection,
                     timer: Timer,
-                    config: Config,
-                    bodydesigs: Dict[str, Tuple[int, int]]
+                    bodydesigs: Dict[str, Tuple[int, int]],
+                    known_bodies_sheet_uri: str
                     ) -> Dict[str, Dict[str, List[KnownBody]]]:
     sys.stderr.write('Loading Known Bodies\n')
     knownbodies: Dict[str, Dict[str, List[KnownBody]]] = {}
 
-    with urllib.request.urlopen(config.known_bodies_sheet_uri) as f:
+    with urllib.request.urlopen(known_bodies_sheet_uri) as f:
         line: bytes
 
         for line in f:
