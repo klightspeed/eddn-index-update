@@ -3,6 +3,7 @@ from typing import Union
 import appdirs
 import os.path
 import sys
+from collections.abc import MutableMapping as Dict
 
 
 class DatabaseConfig(object):
@@ -12,7 +13,7 @@ class DatabaseConfig(object):
     Username: str
     Password: str
 
-    def load(self, config: dict):
+    def load(self, config: Dict[str, str]):
         self.ConnectionType = config['ConnectionType']
         self.Hostname = config['Hostname']
         self.DatabaseName = config['DatabaseName']
@@ -124,7 +125,7 @@ class Config(object):
         config.read(config_files)
 
         self.database = DatabaseConfig()
-        self.database.load(dict(config["Database"]))
+        self.database.load(config["Database"])
 
         paths = config['Paths']
         edsm = config['Paths/EDSM']
