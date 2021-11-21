@@ -105,6 +105,12 @@ def main():
     )
 
     argparser.add_argument(
+        '--print-config', dest='print_config',
+        action='store_const', const=True, default=False,
+        help='Print config and exit'
+    )
+
+    argparser.add_argument(
         '--config-file', dest='config_file',
         default=None,
         help='Configuration file'
@@ -116,6 +122,17 @@ def main():
 
     config = Config()
     config.load('eddn-index-update.ini', args.config_file)
+
+    if args.print_config:
+        for k, v in config.__dict__.items():
+            if k != 'database':
+                print(f'{k}: {v}')
+
+        for k, v in config.database.__dict__.items():
+            if k != 'Password':
+                print(f'database.{k}: {v}')
+
+        return
 
     if args.process_title_progress:
         titleprogress = update_title_progress

@@ -135,6 +135,7 @@ class ProcessorArgs(Protocol):
     no_eddn: bool
     process_title_progress: bool
     config_file: str
+    print_config: bool
 
 
 class KnownBody(TypedDict):
