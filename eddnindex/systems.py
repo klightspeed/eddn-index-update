@@ -1,7 +1,9 @@
 import sys
 import math
-from typing import Iterable, Optional, Set, \
-                   Tuple, List, Dict, Union, Sequence
+from typing import Iterable, Match, Optional, Set, \
+                   Tuple, Union, Sequence
+from collections.abc import MutableSequence as List, \
+                            MutableMapping as Dict
 
 from . import edtslookup
 from .types import EDDNSystem, EDDNRegion, RejectData
@@ -199,7 +201,7 @@ def getrejectdata(regions: Dict[str, EDDNRegion],
 
 
 def rejectdata_add_nameid64(regions: Dict[str, EDDNRegion],
-                            pgsysmatch: Sequence[str],
+                            pgsysmatch: Match[str],
                             rejectdata
                             ):
     regionname: str = pgsysmatch[1]

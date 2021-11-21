@@ -3,11 +3,12 @@ import os.path
 import sys
 import json
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Any
 import urllib.request
 import urllib.error
 import time
-from collections.abc import Collection
+from collections.abc import MutableSequence as List, \
+                            MutableMapping as Dict
 
 from ..config import Config
 from .. import constants
@@ -17,8 +18,8 @@ from ..timer import Timer
 from ..types import EDSMBody
 
 
-def getbodiesfromedsmbyid(edsmid: int, timer: Timer) -> Collection[EDSMBody]:
-    url = 'https://www.edsm.net/api-body-v1/get?id={0}'.format(edsmid)
+def getbodiesfromedsmbyid(edsmid: int, timer: Timer) -> List[EDSMBody]:
+    url = f'https://www.edsm.net/api-body-v1/get?id={edsmid}'
 
     while True:
         try:
@@ -43,7 +44,7 @@ def getbodiesfromedsmbyid(edsmid: int, timer: Timer) -> Collection[EDSMBody]:
         timer.time('edsmhttp')
         return []
 
-    url = 'https://www.edsm.net/api-system-v1/bodies?systemId={0}'.format(edsmsysid)
+    url = f'https://www.edsm.net/api-system-v1/bodies?systemId={edsmsysid}'
 
     while True:
         try:
@@ -86,18 +87,17 @@ def process(sysdb: EDDNSysDB,
     w = 0
     wg = 0
     w2 = 0
-    from timeit import default_timer
-    tstart = default_timer()
 
     fn = 'fetchbodies-{0}.jsonl'.format(datetime.utcnow().isoformat())
     fileid = sysdb.insertedsmfile(fn)
 
     timer.time('bodyquery')
 
-    with open(os.path.join(config.edsm_bodies_dir, fn), 'w', encoding='utf-8') as f:
+    filename = os.path.join(config.edsm_bodies_dir, fn)
+
+    with open(filename, 'w', encoding='utf-8') as f:
         linecount = 0
         totalsize = 0
-        updatecache = False
 
         for i in range(148480000 - 256000, len(sysdb.edsmbodyids) - 2097152):
             row = sysdb.edsmbodyids[i]
@@ -109,7 +109,11 @@ def process(sysdb: EDDNSysDB,
                 bodies = getbodiesfromedsmbyid(i, timer)
 
                 if len(bodies) == 0:
-                    sysdb.updateedsmbodyid(0, i, constants.timestamp_base_date)
+                    sysdb.updateedsmbodyid(
+                        0,
+                        i,
+                        constants.timestamp_base_date
+                    )
                 else:
                     bodiestoinsert = []
                     for msg in bodies:
@@ -120,74 +124,39 @@ def process(sysdb: EDDNSysDB,
                         totalsize += len(line) + 1
                         bodiestoinsert += [(fileid, linecount + 1, msg['id'])]
                         wg += 1
-                        edsmbodyid = msg['id']
-                        bodyid = msg['bodyId']
-                        bodyname = msg['name']
-                        edsmsysid = msg['systemId']
-                        sysname = msg['systemName']
-                        timestamp = msg['updateTime'].replace(' ', 'T')
-                        periapsis = msg.get('argOfPeriapsis')
-                        semimajor = msg.get('semiMajorAxis')
-                        bodytype = msg['type']
-                        subtype = msg['subType']
-                        sqltimestamp = timestamp_to_datetime(timestamp)
-                        sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
-                        timer.time('parse')
-                        (sysid, _, _, _) = sysdb.findedsmsysid(edsmsysid)
-                        (sysbodyid, ts, rec) = sysdb.findedsmbodyid(edsmbodyid)
-                        scanbodyid = -1
 
-                        if sysid and ts != sqlts:
-                            system = sysdb.getsystembyid(sysid)
-                            timer.time('sysquery')
-
-                            if system is not None:
-                                body = {}
-
-                                if bodytype == 'Planet':
-                                    body['PlanetClass'] = subtype
-                                elif bodytype == 'Star':
-                                    body['StarType'] = subtype
-
-                                if periapsis is not None:
-                                    body['Periapsis'] = periapsis
-
-                                if semimajor:
-                                    body['SemiMajorAxis'] = semimajor * 149597870700
-
-                                (scanbody, rejectReason, rejectData) = sysdb.getbody(
-                                    timer,
-                                    bodyname,
-                                    sysname,
-                                    bodyid,
-                                    system,
-                                    body,
-                                    sqltimestamp
-                                )
-
-                                if scanbody:
-                                    scanbodyid = scanbody.id
-
-                                timer.time('bodyquery')
-
-                        sysdb.updateedsmbodyid(scanbodyid, edsmbodyid, sqltimestamp)
+                        process_body(
+                            sysdb,
+                            timer,
+                            msg
+                        )
 
                     sysdb.addedsmfilelinebodies(bodiestoinsert)
                     timer.time('bodyinsert', len(bodiestoinsert))
-                    sysdb.updateedsmfileinfo(fileid, linecount, totalsize, totalsize)
+                    sysdb.updateedsmfileinfo(
+                        fileid,
+                        linecount,
+                        totalsize,
+                        totalsize
+                    )
 
                 w += 1
                 w2 += 1
 
             if ((i + 1) % 1000) == 0:
                 sysdb.commit()
-                sys.stderr.write(('.' if w == 0 else (':' if wg == 0 else '#')) + (' ' * 10) + ('\b' * 10))
+
+                sys.stderr.write(
+                    ('.' if w == 0 else (':' if wg == 0 else '#'))
+                    + (' ' * 10) + ('\b' * 10)
+                )
+
                 sys.stderr.flush()
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDSMBodyM:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDSMBodyM:{i + 1}')
 
                 if w2 >= 10:
                     sysdb.saveedsmbodycache()
@@ -208,3 +177,58 @@ def process(sysdb: EDDNSysDB,
         timer.time('commit')
 
 
+def process_body(sysdb: EDDNSysDB,
+                 timer: Timer,
+                 msg: EDSMBody
+                 ):
+    edsmbodyid = msg['id']
+    bodyid = msg['bodyId']
+    bodyname = msg['name']
+    edsmsysid = msg['systemId']
+    sysname = msg['systemName']
+    timestamp = msg['updateTime'].replace(' ', 'T')
+    periapsis = msg.get('argOfPeriapsis')
+    semimajor = msg.get('semiMajorAxis')
+    bodytype = msg['type']
+    subtype = msg['subType']
+    sqltimestamp = timestamp_to_datetime(timestamp)
+    sqlts = int((sqltimestamp - constants.timestamp_base_date).total_seconds())
+    timer.time('parse')
+    (sysid, _, _, _) = sysdb.findedsmsysid(edsmsysid)
+    (sysbodyid, ts, rec) = sysdb.findedsmbodyid(edsmbodyid)
+    scanbodyid = -1
+
+    if sysid and ts != sqlts:
+        system = sysdb.getsystembyid(sysid)
+        timer.time('sysquery')
+
+        if system is not None:
+            body: Dict[str, Any] = {}
+
+            if bodytype == 'Planet':
+                body['PlanetClass'] = subtype
+            elif bodytype == 'Star':
+                body['StarType'] = subtype
+
+            if periapsis is not None:
+                body['Periapsis'] = periapsis
+
+            if semimajor:
+                body['SemiMajorAxis'] = semimajor * 149597870700
+
+            (scanbody, rejectReason, rejectData) = sysdb.getbody(
+                timer,
+                bodyname,
+                sysname,
+                bodyid,
+                system,
+                body,
+                sqltimestamp
+            )
+
+            if scanbody:
+                scanbodyid = scanbody.id
+
+            timer.time('bodyquery')
+
+    sysdb.updateedsmbodyid(scanbodyid, edsmbodyid, sqltimestamp)

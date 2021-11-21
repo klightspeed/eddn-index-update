@@ -1,5 +1,7 @@
 from datetime import datetime
-from typing import List, NamedTuple, Optional, TypedDict, Protocol
+from typing import NamedTuple, Optional, TypedDict, Protocol
+from collections.abc import MutableSequence as List, \
+                            MutableMapping as Dict
 import numpy
 
 
@@ -65,7 +67,7 @@ class EDDNBody(NamedTuple):
     system_id: int
     bodyid: Optional[int]
     category: Optional[int]
-    arg_of_periapsis: float
+    arg_of_periapsis: Optional[float]
     valid_from: datetime
     valid_until: datetime
     is_rejected: bool
@@ -101,6 +103,16 @@ class EDSMBody(TypedDict):
     semiMajorAxis: Optional[float]
     type: str
     subType: str
+
+
+class EDSMStation(TypedDict):
+    id: int
+    marketId: Optional[int]
+    name: str
+    type: str
+    systemId: int
+    systemName: str
+    updateTime: Dict[str, str]
 
 
 class Writable(Protocol):

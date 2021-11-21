@@ -5,7 +5,8 @@ import json
 import bz2
 import math
 from datetime import datetime, timedelta
-from typing import Callable, List, Tuple
+from typing import Callable, Tuple
+from collections.abc import MutableSequence as List
 
 from ..config import Config
 from ..types import EDDNFile, EDDNSystem, Writable

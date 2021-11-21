@@ -1,5 +1,6 @@
 import sys
-from typing import Callable, List, Optional
+from typing import Callable, Optional
+from collections.abc import MutableSequence as List
 import urllib.request
 import urllib.error
 import json

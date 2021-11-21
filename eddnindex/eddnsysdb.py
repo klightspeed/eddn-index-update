@@ -4,7 +4,9 @@ import sys
 import json
 from functools import lru_cache
 from datetime import datetime
-from typing import Any, Optional, Tuple, List, Dict, Union
+from typing import Any, Optional, Tuple, Union
+from collections.abc import MutableSequence as List, \
+                            MutableMapping as Dict
 
 import numpy
 import numpy.typing
@@ -208,7 +210,7 @@ class EDDNSysDB(object):
                 timer: Timer,
                 name: str,
                 sysname: str,
-                bodyid: int,
+                bodyid: Optional[int],
                 system,
                 body,
                 timestamp

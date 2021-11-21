@@ -1,7 +1,9 @@
 import os
 import os.path
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Optional
+from collections.abc import MutableMapping as Dict, \
+                            MutableSequence as List
 
 from .types import EDDNSystem, EDDNBody
 from .timer import Timer
@@ -15,7 +17,7 @@ def getbody(conn: DBConnection,
             timer: Timer,
             name: str,
             sysname: str,
-            bodyid: int,
+            bodyid: Optional[int],
             system: EDDNSystem,
             body: Dict[str, Any],
             timestamp: datetime,
@@ -311,8 +313,6 @@ def getbody(conn: DBConnection,
 
             frows = [r for r in allrows if r[1].lower() == name.lower()]
 
-            import pdb
-            pdb.set_trace()
             return get_reject_data(dbrows, 'Body Mismatch')
 
         if ispgname and desigid is not None:
@@ -328,6 +328,9 @@ def getbody(conn: DBConnection,
             )
 
             timer.time('bodyinsertpg')
+
+            periapsis = body.get('Periapsis')
+
             return (
                 EDDNBody(
                     rowid,
@@ -336,7 +339,7 @@ def getbody(conn: DBConnection,
                     system.id,
                     bodyid,
                     category,
-                    body.get('Periapsis'),
+                    float(periapsis) if periapsis is not None else None,
                     constants.timestamp_base_date,
                     constants.timestamp_max_date,
                     False,
@@ -350,7 +353,7 @@ def getbody(conn: DBConnection,
                 or desigid is None):
             allrows = list(sqlqueries.get_bodies_by_custom_name(conn, (name,)))
             pgsysbodymatch = constants.procgen_sys_body_name_re.match(name)
-            dupsystems = []
+            dupsystems: List[EDDNSystem] = []
 
             if pgsysbodymatch:
                 dupsysname = pgsysbodymatch['sysname']
@@ -396,12 +399,6 @@ def getbody(conn: DBConnection,
                     'Procgen body in wrong system',
                     [{'System': sysname, 'Body': name}])
             else:
-                if ('debugunknownbodies' in os.environ
-                        and (sysknownbodies is not None
-                             or 'debugunknownbodysystems' in os.environ)):
-                    import pdb
-                    pdb.set_trace()
-
                 return (
                     None,
                     'Unknown named body',
@@ -412,9 +409,6 @@ def getbody(conn: DBConnection,
             conn,
             (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
         )
-        if rowid is None:
-            import pdb
-            pdb.set_trace()
 
         sqlqueries.insert_named_body(conn, (rowid, system.id, name))
         # sqlqueries.set_body_invalid(conn, (rowid,))

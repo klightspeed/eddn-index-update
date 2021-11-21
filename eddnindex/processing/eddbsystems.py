@@ -3,7 +3,8 @@ import json
 import bz2
 import math
 import csv
-from typing import Any, Callable, Dict
+from typing import Any, Callable
+from collections.abc import MutableMapping as Dict
 
 from ..config import Config
 from ..types import Writable

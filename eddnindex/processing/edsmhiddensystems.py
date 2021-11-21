@@ -23,8 +23,11 @@ def process(sysdb: EDDNSysDB,
             try:
                 msg = json.loads(line)
                 edsmsysid = msg['id']
-                sysname = msg['system']
-            except (OverflowError, ValueError, TypeError, json.JSONDecodeError):
+            except (OverflowError,
+                    ValueError,
+                    TypeError,
+                    json.JSONDecodeError
+                    ):
                 sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
                 rejectmsg = {
                     'rejectReason': 'Invalid',
@@ -33,14 +36,20 @@ def process(sysdb: EDDNSysDB,
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
                 timer.time('error')
-                pass
             else:
                 timer.time('parse')
-                (sysid, ts, hascoord, rec) = sysdb.findedsmsysid(edsmsysid)
+                (sysid, ts, _, rec) = sysdb.findedsmsysid(edsmsysid)
                 timer.time('sysquery')
 
-                if sysid:
-                    rec = sysdb.updateedsmsysid(edsmsysid, sysid, ts, False, True, False)
+                if sysid and ts is not None:
+                    rec = sysdb.updateedsmsysid(
+                        edsmsysid,
+                        sysid,
+                        ts,
+                        False,
+                        True,
+                        False
+                    )
                     w += 1
 
                 if rec is not None:

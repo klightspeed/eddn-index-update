@@ -3,7 +3,8 @@ import os.path
 import sys
 import json
 import bz2
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
+from collections.abc import MutableSequence as List
 
 from ..config import Config
 from ..types import EDSMFile, Writable
@@ -57,7 +58,7 @@ def process(sysdb: EDDNSysDB,
                 lines = sysdb.getedsmbodyfilelines(fileinfo.id)
                 linecount = 0
                 totalsize = 0
-                bodiestoinsert = []
+                bodiestoinsert: List[Tuple[int, int, int]] = []
                 timer.time('load')
                 updatecache = False
 
@@ -108,7 +109,10 @@ def process(sysdb: EDDNSysDB,
             )
 
 
-def commit(sysdb, timer, bodiestoinsert):
+def commit(sysdb: EDDNSysDB,
+           timer: Timer,
+           bodiestoinsert: List[Tuple[int, int, int]]
+           ):
     sysdb.commit()
     if len(bodiestoinsert) != 0:
         sysdb.addedsmfilelinebodies(bodiestoinsert)
@@ -121,7 +125,7 @@ def process_line(sysdb: EDDNSysDB,
                  timer: Timer,
                  rejectout: Writable,
                  lines,
-                 bodiestoinsert,
+                 bodiestoinsert: List[Tuple[int, int, int]],
                  lineno: int,
                  line: bytes
                  ):
