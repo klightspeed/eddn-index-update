@@ -72,8 +72,6 @@ def getbody(conn: DBConnection,
 
     desigid = None
     category = None
-    sysknownbodies = None
-    knownbodylist = None
 
     if sysname in knownbodies:
         sysknownbodies = knownbodies[sysname]
@@ -120,7 +118,6 @@ def getbody(conn: DBConnection,
                 comet3 = match['moon2comet']
                 moon3str = match['moon3']
 
-                bodycategory = 0
                 planet = 0
                 moon1 = 0
                 moon2 = 0
@@ -309,8 +306,6 @@ def getbody(conn: DBConnection,
                         (xsystem.id, 0)
                     ))
 
-            frows = [r for r in allrows if r[1].lower() == name.lower()]
-
             return get_reject_data(dbrows, 'Body Mismatch')
 
         if ispgname and desigid is not None:
@@ -355,7 +350,6 @@ def getbody(conn: DBConnection,
 
             if pgsysbodymatch:
                 dupsysname = pgsysbodymatch['sysname']
-                desig = pgsysbodymatch['desig']
                 dupsystems = findsystemsbyname(
                     conn,
                     namedbodies,

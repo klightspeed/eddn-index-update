@@ -150,7 +150,7 @@ def process_line(sysdb,
                  line
                  ):
     timer.time('read')
-    msg = None
+
     try:
         msg = json.loads(line)
         body = msg['message']

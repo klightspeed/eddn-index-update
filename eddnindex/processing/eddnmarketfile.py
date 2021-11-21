@@ -127,7 +127,6 @@ def process_line(sysdb: EDDNSysDB,
     if ((reprocess is True and (lineno + 1) not in stnlines)
             or (lineno + 1) not in infolines):
         timer.time('read')
-        msg = None
 
         try:
             msg = json.loads(line)

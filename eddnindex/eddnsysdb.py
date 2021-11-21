@@ -76,15 +76,15 @@ class EDDNSysDB(object):
             self.knownbodiessheeturi = config.known_bodies_sheet_uri
             self.edsmbodycachefile = config.edsm_bodies_cache_file
 
-            (self.regions, self.regionaddrs) = loading.regions(conn, timer)
-            self.namedsystems = loading.namedsystems(conn, timer)
-            self.namedbodies = loading.namedbodies(conn, timer)
-            self.parentsets = loading.parentsets(conn, timer)
-            self.software = loading.software(conn, timer)
-            self.bodydesigs = loading.bodydesigs(conn, timer)
-            self.factions = loading.factions(conn, timer)
+            (self.regions, self.regionaddrs) = loading.loadregions(conn, timer)
+            self.namedsystems = loading.loadnamedsystems(conn, timer)
+            self.namedbodies = loading.loadnamedbodies(conn, timer)
+            self.parentsets = loading.loadparentsets(conn, timer)
+            self.software = loading.loadsoftware(conn, timer)
+            self.bodydesigs = loading.loadbodydesigs(conn, timer)
+            self.factions = loading.loadfactions(conn, timer)
 
-            self.knownbodies = loading.knownbodies(
+            self.knownbodies = loading.loadknownbodies(
                 conn,
                 timer,
                 config,
@@ -92,21 +92,21 @@ class EDDNSysDB(object):
             )
 
             if loadedsmsys or loadedsmbodies:
-                self.edsmsysids = loading.edsmsystems(
+                self.edsmsysids = loading.loadedsmsystems(
                     conn,
                     timer,
                     self.edsmsyscachefile
                 )
 
             if loadedsmbodies:
-                self.edsmbodyids = loading.edsmbodies(
+                self.edsmbodyids = loading.loadedsmbodies(
                     conn,
                     timer,
                     self.edsmbodycachefile
                 )
 
             if loadeddbsys:
-                self.eddbsysids = loading.eddbsystems(
+                self.eddbsysids = loading.loadeddbsystems(
                     conn,
                     timer
                 )
@@ -260,7 +260,7 @@ class EDDNSysDB(object):
         faction = EDDNFaction(factionid, name, government, allegiance)
 
         if factions is None:
-            self.factions[name] = factions = [faction]
+            self.factions[name] = [faction]
         else:
             factions.append(faction)
 

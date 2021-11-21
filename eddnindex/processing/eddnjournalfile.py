@@ -189,7 +189,7 @@ def process_line(sysdb: EDDNSysDB,
     if ((lineno + 1) not in infolines
             or (reprocessall is True and event_type == 'Scan')):
         timer.time('read')
-        msg = None
+
         try:
             msg = json.loads(line)
             body = msg['message']

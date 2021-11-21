@@ -92,8 +92,6 @@ def findsystemsbyname(conn: DBConnection,
         systems = [s for s in systems]
 
     procgen_sysname_match = constants.procgen_sysname_re.match(sysname)
-    region_info = None
-    modsysaddr = None
 
     if procgen_sysname_match:
         regionname: str = procgen_sysname_match[1]
@@ -220,7 +218,6 @@ def rejectdata_add_nameid64(regions: Dict[str, EDDNRegion],
 
     if regionname.lower() in regions:
         region_info = regions[regionname.lower()]
-        modsysaddr = None
 
         if region_info.is_sphere_sector:
             x0 = math.floor(region_info.x0 / sp) + (mid & 0x7F)

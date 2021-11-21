@@ -20,10 +20,10 @@ from . import sqlqueries
 from .database import DBConnection
 
 
-def edsmsystems(conn: DBConnection,
-                timer: Timer,
-                edsmsyscachefile: str
-                ) -> numpy.core.records.recarray:
+def loadedsmsystems(conn: DBConnection,
+                    timer: Timer,
+                    edsmsyscachefile: str
+                    ) -> numpy.core.records.recarray:
     maxedsmsysid = sqlqueries.get_max_edsm_system_id(conn, None)
     edsmsysids: numpy.core.records.recarray = numpy.empty(
         0,
@@ -111,9 +111,9 @@ def edsmsystems(conn: DBConnection,
     return edsmsysids
 
 
-def eddbsystems(conn: DBConnection,
-                timer: Timer
-                ) -> numpy.core.records.recarray:
+def loadeddbsystems(conn: DBConnection,
+                    timer: Timer
+                    ) -> numpy.core.records.recarray:
     maxeddbsysid = sqlqueries.get_max_eddb_system_id(conn, None)
     eddbsysids: numpy.core.records.recarray = numpy.empty(
         0,
@@ -169,10 +169,10 @@ def eddbsystems(conn: DBConnection,
     return eddbsysids
 
 
-def edsmbodies(conn: DBConnection,
-               timer: Timer,
-               edsmbodycachefile: str
-               ) -> numpy.core.records.recarray:
+def loadedsmbodies(conn: DBConnection,
+                   timer: Timer,
+                   edsmbodycachefile: str
+                   ) -> numpy.core.records.recarray:
     maxedsmbodyid = sqlqueries.get_max_edsm_body_id(conn, None)
     edsmbodyids = numpy.empty(
         0,
@@ -252,9 +252,9 @@ def edsmbodies(conn: DBConnection,
     return edsmbodyids
 
 
-def parentsets(conn: DBConnection,
-               timer: Timer
-               ) -> Dict[Tuple[int, str], int]:
+def loadparentsets(conn: DBConnection,
+                   timer: Timer
+                   ) -> Dict[Tuple[int, str], int]:
     sys.stderr.write('Loading Parent Sets\n')
     rows = sqlqueries.get_parent_sets(conn, None)
     timer.time('sqlparents', len(rows))
@@ -268,9 +268,9 @@ def parentsets(conn: DBConnection,
     return parentsets
 
 
-def software(conn: DBConnection,
-             timer: Timer
-             ) -> Dict[str, int]:
+def loadsoftware(conn: DBConnection,
+                 timer: Timer
+                 ) -> Dict[str, int]:
     sys.stderr.write('Loading Software\n')
     rows = sqlqueries.get_software(conn, None)
     timer.time('sqlsoftware', len(rows))
@@ -284,9 +284,9 @@ def software(conn: DBConnection,
     return software
 
 
-def bodydesigs(conn: DBConnection,
-               timer: Timer
-               ) -> Dict[str, Tuple[int, int]]:
+def loadbodydesigs(conn: DBConnection,
+                   timer: Timer
+                   ) -> Dict[str, Tuple[int, int]]:
     sys.stderr.write('Loading Body Designations\n')
     rows = sqlqueries.get_body_designations(conn, None)
     timer.time('sqlbodydesigs', len(rows))
@@ -300,9 +300,9 @@ def bodydesigs(conn: DBConnection,
     return bodydesigs
 
 
-def namedbodies(conn: DBConnection,
-                timer: Timer
-                ) -> Dict[int, Dict[str, List[EDDNBody]]]:
+def loadnamedbodies(conn: DBConnection,
+                    timer: Timer
+                    ) -> Dict[int, Dict[str, List[EDDNBody]]]:
     sys.stderr.write('Loading Named Bodies\n')
     rows = sqlqueries.get_named_bodies(conn, None)
     timer.time('sqlbodyname', len(rows))
@@ -339,9 +339,9 @@ def namedbodies(conn: DBConnection,
     return namedbodies
 
 
-def namedsystems(conn: DBConnection,
-                 timer: Timer
-                 ) -> Dict[str, List[EDDNSystem]]:
+def loadnamedsystems(conn: DBConnection,
+                     timer: Timer
+                     ) -> Dict[str, List[EDDNSystem]]:
     sys.stderr.write('Loading Named Systems\n')
     rows = sqlqueries.get_named_systems(conn, None)
     timer.time('sqlname', len(rows))
@@ -370,9 +370,9 @@ def namedsystems(conn: DBConnection,
     return namedsystems
 
 
-def regions(conn: DBConnection,
-            timer: Timer
-            ) -> Tuple[Dict[str, EDDNRegion], Dict[int, EDDNRegion]]:
+def loadregions(conn: DBConnection,
+                timer: Timer
+                ) -> Tuple[Dict[str, EDDNRegion], Dict[int, EDDNRegion]]:
     sys.stderr.write('Loading Regions\n')
     rows = sqlqueries.get_regions(conn, None)
     timer.time('sqlregion', len(rows))
@@ -403,9 +403,9 @@ def regions(conn: DBConnection,
     return (regions, regionaddrs)
 
 
-def factions(conn: DBConnection,
-             timer: Timer
-             ) -> Dict[str, List[EDDNFaction]]:
+def loadfactions(conn: DBConnection,
+                 timer: Timer
+                 ) -> Dict[str, List[EDDNFaction]]:
     sys.stderr.write('Loading Factions\n')
     rows = sqlqueries.get_factions(conn, None)
     timer.time('sqlfactions')
@@ -426,11 +426,11 @@ def factions(conn: DBConnection,
     return factions
 
 
-def knownbodies(conn: DBConnection,
-                timer: Timer,
-                config: Config,
-                bodydesigs: Dict[str, Tuple[int, int]]
-                ) -> Dict[str, Dict[str, List[KnownBody]]]:
+def loadknownbodies(conn: DBConnection,
+                    timer: Timer,
+                    config: Config,
+                    bodydesigs: Dict[str, Tuple[int, int]]
+                    ) -> Dict[str, Dict[str, List[KnownBody]]]:
     sys.stderr.write('Loading Known Bodies\n')
     knownbodies: Dict[str, Dict[str, List[KnownBody]]] = {}
 
