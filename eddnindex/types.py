@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import NamedTuple, Optional, TypedDict, Protocol
-from collections.abc import MutableSequence as List, \
-                            MutableMapping as Dict
+from collections.abc import MutableMapping as Dict
 import numpy
 
 
@@ -127,21 +126,6 @@ class KnownBody(TypedDict):
     BodyName: str
     BodyDesignation: str
     BodyDesignationId: int
-
-
-class RejectDataSystem(TypedDict):
-    id: int
-    id64: int
-    x: float
-    y: float
-    z: float
-    name: str
-
-
-class RejectData(TypedDict):
-    nameid64: Optional[int]
-    id64name: Optional[str]
-    systems: List[RejectDataSystem]
 
 
 DTypeEDSMSystem = numpy.dtype(

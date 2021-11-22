@@ -1,12 +1,11 @@
-import sys
 import math
-from typing import Iterable, Match, Optional, Set, \
-                   Tuple, Union, Sequence
+from typing import Iterable, MutableSet, NamedTuple, Optional, \
+                   Tuple, TypedDict, Union, Sequence
 from collections.abc import MutableSequence as List, \
                             MutableMapping as Dict
 
 from . import edtslookup
-from .types import EDDNSystem, EDDNRegion, RejectData
+from .types import EDDNSystem, EDDNRegion
 from .timer import Timer
 from . import constants
 from .util import id64_to_modsysaddr, modsysaddr_to_id64, from_db_string
@@ -14,18 +13,45 @@ from . import sqlqueries
 from .database import DBConnection
 
 
+class RejectDataSystem(TypedDict):
+    id: int
+    id64: int
+    x: float
+    y: float
+    z: float
+    name: str
+
+
+class RejectData(TypedDict):
+    nameid64: Optional[int]
+    nameid64_error: Optional[str]
+    id64name: Optional[str]
+    id64name_error: Optional[str]
+    systems: List[RejectDataSystem]
+
+
+class PGSysInfo(NamedTuple):
+    region_info: EDDNRegion
+    c1: int
+    c2: int
+    c3: int
+    masscode: int
+    n1: int
+    n2: int
+
+
 def findsystem(conn: DBConnection,
                cursor: Union[Sequence[EDDNSystem],
                              Sequence[Sequence]],
                sysname: str,
                starpos: Union[Tuple[float, float, float],
-                              List[float],
+                              Tuple[float, float, float],
                               None],
                sysaddr: Optional[int],
-               syslist: Set[EDDNSystem]
+               syslist: MutableSet[EDDNSystem]
                ) -> Optional[EDDNSystem]:
     rows = list(cursor)
-    systems: Set[EDDNSystem] = set()
+    systems: MutableSet[EDDNSystem] = set()
 
     for row in rows:
         if isinstance(row, EDDNSystem):
@@ -44,7 +70,7 @@ def findsystem(conn: DBConnection,
             )
 
     if starpos is not None or sysaddr is not None:
-        matches: Set[EDDNSystem] = set()
+        matches: MutableSet[EDDNSystem] = set()
         for system in systems:
             if ((sysname is None or system.name.lower() == sysname.lower())
                     and (starpos is None or not system.has_coords
@@ -85,75 +111,30 @@ def findsystemsbyname(conn: DBConnection,
                       regions: Dict[str, EDDNRegion],
                       sysname: str
                       ) -> List[EDDNSystem]:
-    systems: List[EDDNSystem] = []
+    modsysaddr: Optional[int] = None
 
-    if sysname in namedsystems:
-        systems = namedsystems[sysname]
-        systems = [s for s in systems]
+    systems: List[EDDNSystem] = namedsystems.get(sysname) or []
+    systems = [s for s in systems]
 
-    procgen_sysname_match = constants.procgen_sysname_re.match(sysname)
+    _, modsysaddr, _, _ = pgname_to_modsysaddr(regions, sysname)
 
-    if procgen_sysname_match:
-        regionname: str = procgen_sysname_match[1]
-        mid1_2: str = procgen_sysname_match[2].upper()
-        sizecls: str = procgen_sysname_match[3].lower()
-        mid3 = int(procgen_sysname_match[4] or "0")
-        seq = int(procgen_sysname_match[5])
-        mid1a = ord(mid1_2[0]) - 65
-        mid1b = ord(mid1_2[1]) - 65
-        mid2 = ord(mid1_2[3]) - 65
-        mid = (((mid3 * 26 + mid2) * 26 + mid1b) * 26 + mid1a)
-        sz = ord(sizecls) - 97
-        sx = 7 - sz
-        sp = 320 << sz
-        sb = 0x7F >> sz
+    if modsysaddr is not None:
+        rows = sqlqueries.get_systems_by_modsysaddr(
+            conn,
+            (modsysaddr,)
+        )
 
-        if regionname.lower() in regions:
-            region_info = regions[regionname.lower()]
-            modsysaddr = None
-            if region_info.is_sphere_sector:
-                x0 = math.floor(region_info.x0 / sp) + (mid & 0x7F)
-                y0 = math.floor(region_info.y0 / sp) + ((mid >> 7) & 0x7F)
-                z0 = math.floor(region_info.z0 / sp) + ((mid >> 14) & 0x7F)
-                x1 = x0 & sb
-                x2 = x0 >> sx
-                y1 = y0 & sb
-                y2 = y0 >> sx
-                z1 = z0 & sb
-                z2 = z0 >> sx
-
-                modsysaddr = ((z2 << 53)
-                              | (y2 << 47)
-                              | (x2 << 40)
-                              | (sz << 37)
-                              | (z1 << 30)
-                              | (y1 << 23)
-                              | (x1 << 16)
-                              | seq)
-
-            elif region_info.region_address is not None:
-                modsysaddr = ((region_info.region_address << 40)
-                              | (sz << 37)
-                              | (mid << 16)
-                              | seq)
-
-            if modsysaddr is not None:
-                rows = sqlqueries.get_systems_by_modsysaddr(
-                    conn,
-                    (modsysaddr,)
-                )
-
-                systems += [
-                    EDDNSystem(
-                        row[0],
-                        row[1],
-                        from_db_string(row[2]),
-                        row[3] / 32.0 - 49985,
-                        row[4] / 32.0 - 40985,
-                        row[5] / 32.0 - 24105,
-                        row[3] != 0 or row[4] != 0 or row[5] != 0
-                    ) for row in rows
-                ]
+        systems += [
+            EDDNSystem(
+                row[0],
+                row[1],
+                from_db_string(row[2]),
+                row[3] / 32.0 - 49985,
+                row[4] / 32.0 - 40985,
+                row[5] / 32.0 - 24105,
+                row[3] != 0 or row[4] != 0 or row[5] != 0
+            ) for row in rows
+        ]
 
     return systems
 
@@ -164,26 +145,29 @@ def getrejectdata(regions: Dict[str, EDDNRegion],
                   sysaddr: Optional[int],
                   systems: Optional[Iterable[EDDNSystem]]
                   ):
-    pgsysmatch = constants.procgen_sysname_re.match(sysname)
     rejectdata: RejectData = {
         'id64name': None,
+        'id64name_error': None,
         'nameid64': None,
+        'nameid64_error': None,
         'systems': []
     }
 
     if sysaddr is not None:
-        rejectdata_add_id64name(
-            regionaddrs,
-            sysaddr,
-            rejectdata
-        )
+        pgname, errmsg = id64_to_pgname(regionaddrs, sysaddr)
+        rejectdata['id64name'] = pgname
+        rejectdata['id64name_error'] = errmsg
 
-    if pgsysmatch:
-        rejectdata_add_nameid64(
-            regions,
-            pgsysmatch,
-            rejectdata
-        )
+    ispgname, modsysaddr, _, errmsg = pgname_to_modsysaddr(
+        regions,
+        sysname
+    )
+
+    if ispgname:
+        if modsysaddr is not None:
+            rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
+        else:
+            rejectdata['nameid64_error'] = errmsg
 
     if systems is not None:
         rejectdata['systems'] = [{
@@ -198,148 +182,32 @@ def getrejectdata(regions: Dict[str, EDDNRegion],
     return rejectdata
 
 
-def rejectdata_add_nameid64(regions: Dict[str, EDDNRegion],
-                            pgsysmatch: Match[str],
-                            rejectdata
-                            ):
-    regionname: str = pgsysmatch[1]
-    mid1_2: str = pgsysmatch[2].upper()
-    sizecls: str = pgsysmatch[3].lower()
-    mid3 = int(pgsysmatch[4] or "0")
-    seq = int(pgsysmatch[5])
-    mid1a = ord(mid1_2[0]) - 65
-    mid1b = ord(mid1_2[1]) - 65
-    mid2 = ord(mid1_2[3]) - 65
-    mid = (((mid3 * 26 + mid2) * 26 + mid1b) * 26 + mid1a)
-    sz = ord(sizecls) - 97
-    sx = 7 - sz
-    sp = 320 << sz
-    sb = 0x7F >> sz
-
-    if regionname.lower() in regions:
-        region_info = regions[regionname.lower()]
-
-        if region_info.is_sphere_sector:
-            x0 = math.floor(region_info.x0 / sp) + (mid & 0x7F)
-            y0 = math.floor(region_info.y0 / sp) + ((mid >> 7) & 0x7F)
-            z0 = math.floor(region_info.z0 / sp) + ((mid >> 14) & 0x7F)
-            x1 = x0 & sb
-            x2 = x0 >> sx
-            y1 = y0 & sb
-            y2 = y0 >> sx
-            z1 = z0 & sb
-            z2 = z0 >> sx
-            modsysaddr = ((z2 << 53)
-                          | (y2 << 47)
-                          | (x2 << 40)
-                          | (sz << 37)
-                          | (z1 << 30)
-                          | (y1 << 23)
-                          | (x1 << 16)
-                          | seq)
-
-            rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
-        elif region_info.region_address is not None:
-            modsysaddr = ((region_info.region_address << 40)
-                          | (sz << 37)
-                          | (mid << 16)
-                          | seq)
-
-            rejectdata['nameid64'] = modsysaddr_to_id64(modsysaddr)
-
-
-def rejectdata_add_id64name(regionaddrs: Dict[int, EDDNRegion],
-                            sysaddr: int,
-                            rejectdata: RejectData):
-    modsysaddr = id64_to_modsysaddr(sysaddr)
-    regionaddr = modsysaddr >> 40
-    if regionaddr in regionaddrs:
-        region_info = regionaddrs[regionaddr]
-        masscode = chr(((modsysaddr >> 37) & 7) + 97)
-        seq = int(modsysaddr & 65535)
-        mid = (modsysaddr >> 16) & 2097151
-        mid1a = chr((mid % 26) + 65)
-        mid1b = chr(((mid // 26) % 26) + 65)
-        mid2 = chr(((mid // (26 * 26)) % 26) + 65)
-        mid3 = mid // (26 * 26 * 26)
-        mid3s = '' if mid3 == 0 else str(mid3) + '-'
-        rejectdata['id64name'] = '{0} {1}{2}-{3} {4}{5}{6}'.format(
-                region_info.name,
-                mid1a,
-                mid1b,
-                mid2,
-                masscode,
-                mid3s,
-                seq
-            )
-
-
-def getsystem(conn: DBConnection,
-              timer: Timer,
-              sysname: str,
-              x: Optional[float],
-              y: Optional[float],
-              z: Optional[float],
-              sysaddr: Optional[int],
-              namedsystems: Dict[str, List[EDDNSystem]],
-              regions: Dict[str, EDDNRegion],
-              regionaddrs: Dict[int, EDDNRegion],
-              ) -> Union[Tuple[EDDNSystem, None, None],
-                         Tuple[None, str, dict]]:
-    starpos: Optional[List[float]]
-
-    if x is not None and y is not None and z is not None:
-        starpos = [math.floor(v * 32 + 0.5) / 32.0 for v in (x, y, z)]
-        vx = int((starpos[0] + 49985) * 32)
-        vy = int((starpos[1] + 40985) * 32)
-        vz = int((starpos[2] + 24105) * 32)
-    else:
-        starpos = None
-        vx = 0
-        vy = 0
-        vz = 0
-
-    systems: Set[EDDNSystem] = set()
-
-    if sysname in namedsystems:
-        namedsystemlist = namedsystems[sysname]
-
-        system = findsystem(
-            conn,
-            namedsystemlist,
-            sysname,
-            starpos,
-            sysaddr,
-            systems
-        )
-
-        if system is not None:
-            return (system, None, None)
-
-    timer.time('sysquery', 0)
+def pgname_to_modsysaddr(regions: Dict[str, EDDNRegion],
+                         sysname: str
+                         ) -> Union[Tuple[bool, int, PGSysInfo, None],
+                                    Tuple[bool, None, None, str],
+                                    Tuple[bool, None, None, None]]:
     pgsysmatch = constants.procgen_sysname_re.match(sysname)
-    region_info = None
-    modsysaddr = None
-    mid1a = mid1b = mid2 = sz = mid3 = seq = None
 
     if pgsysmatch:
         regionname: str = pgsysmatch[1]
         mid1_2: str = pgsysmatch[2].upper()
-        sizecls: str = pgsysmatch[3].lower()
-        mid3 = int(pgsysmatch[4] or "0")
-        seq = int(pgsysmatch[5])
-        mid1a = ord(mid1_2[0]) - 65
-        mid1b = ord(mid1_2[1]) - 65
-        mid2 = ord(mid1_2[3]) - 65
-        mid = (((mid3 * 26 + mid2) * 26 + mid1b) * 26 + mid1a)
-        sz = ord(sizecls) - 97
-        sx = 7 - sz
-        sp = 320 << sz
-        sb = 0x7F >> sz
+        masscodestr: str = pgsysmatch[3].lower()
+        n1 = int(pgsysmatch[4] or "0")
+        n2 = int(pgsysmatch[5])
+        c1 = ord(mid1_2[0]) - 65
+        c2 = ord(mid1_2[1]) - 65
+        c3 = ord(mid1_2[3]) - 65
+        mid = (((n1 * 26 + c3) * 26 + c2) * 26 + c1)
+        masscode = ord(masscodestr) - 97
+        sx = 7 - masscode
+        sp = 320 << masscode
+        sb = 0x7F >> masscode
 
-        if regionname.lower() in regions:
-            region_info = regions[regionname.lower()]
-            modsysaddr = None
+        region_info = regions.get(regionname.lower())
+        if region_info is not None:
+            pginfo = PGSysInfo(region_info, c1, c2, c3, masscode, n1, n2)
+
             if region_info.is_sphere_sector:
                 x0 = math.floor(region_info.x0 / sp) + (mid & 0x7F)
                 y0 = math.floor(region_info.y0 / sp) + ((mid >> 7) & 0x7F)
@@ -353,283 +221,242 @@ def getsystem(conn: DBConnection,
                 modsysaddr = ((z2 << 53)
                               | (y2 << 47)
                               | (x2 << 40)
-                              | (sz << 37)
+                              | (masscode << 37)
                               | (z1 << 30)
                               | (y1 << 23)
                               | (x1 << 16)
-                              | seq)
-
+                              | n2)
+                return (True, modsysaddr, pginfo, None)
             elif region_info.region_address is not None:
                 modsysaddr = ((region_info.region_address << 40)
-                              | (sz << 37)
+                              | (masscode << 37)
                               | (mid << 16)
-                              | seq)
-
-            timer.time('sysquerypgre')
-
-            if modsysaddr is not None:
-                rows = sqlqueries.get_systems_by_modsysaddr(
-                    conn,
-                    (modsysaddr,)
-                )
-
-                system = findsystem(
-                    conn,
-                    rows,
-                    sysname,
-                    starpos,
-                    sysaddr,
-                    systems
-                )
-
-                timer.time('sysselectmaddr')
-
-                if system is not None:
-                    return (system, None, None)
+                              | n2)
+                return (True, modsysaddr, pginfo, None)
             else:
-                errmsg = ('Unable to resolve system address for system '
-                          f'{sysname} [{sysaddr}] ({x},{y},{z})\n')
-                sys.stderr.write(errmsg)
-                sys.stderr.writelines([f'{s}\n' for s in systems])
-
-                return (
-                    None,
-                    errmsg,
-                    getrejectdata(
-                        regions,
-                        regionaddrs,
-                        sysname,
-                        sysaddr,
-                        systems
-                    )
-                )
-                # raise ValueError('Unable to resolve system address')
+                errmsg = f'Region {regionname} is corrupt'
+                return (True, None, None, errmsg)
         else:
-            errmsg = (f'Region {regionname} not found for system '
-                      f'{sysname} [{sysaddr}] ({x},{y},{z})\n')
-            sys.stderr.write(errmsg)
-            sys.stderr.writelines([f'{s}\n' for s in systems])
+            errmsg = f'Region {regionname} not found'
+            return (True, None, None, errmsg)
 
-            return (
-                None,
-                errmsg,
-                getrejectdata(
-                    regions,
-                    regionaddrs,
-                    sysname,
-                    sysaddr,
-                    systems
-                )
-            )
-            # raise ValueError('Region not found')
+    return (False, None, None, None)
 
-    if sysaddr is not None:
-        modsysaddr = id64_to_modsysaddr(sysaddr)
 
-        rows = sqlqueries.get_systems_by_modsysaddr(
-            conn,
-            (modsysaddr,)
-        )
+def id64_to_pgname(regionaddrs: Dict[int, EDDNRegion],
+                   id64: int
+                   ) -> Union[Tuple[str, None],
+                              Tuple[None, str]]:
+    modsysaddr = id64_to_modsysaddr(id64)
+    regionaddr = modsysaddr >> 40
+    region_info = regionaddrs.get(regionaddr)
 
-        system = findsystem(
-            conn,
-            rows,
-            sysname,
-            starpos,
-            sysaddr,
-            systems
-        )
+    if region_info is not None:
+        region = region_info.name
+        mc = chr(((modsysaddr >> 37) & 7) + 97)
+        mid = (modsysaddr >> 16) & 2097151
+        c1 = chr((mid % 26) + 65)
+        c2 = chr(((mid // 26) % 26) + 65)
+        c3 = chr(((mid // (26 * 26)) % 26) + 65)
+        n1 = mid // (26 * 26 * 26)
+        n1s = '' if n1 == 0 else str(n1) + '-'
+        n2 = int(modsysaddr & 65535)
+        return (f'{region} {c1}{c2}-{c3} {mc}{n1s}{n2}', None)
+    else:
+        errmsg = f'Region Address {regionaddr} not found'
+        return (None, errmsg)
 
-        timer.time('sysselectmaddr')
 
-        if system is not None:
-            return (system, None, None)
+def find_system(conn: DBConnection,
+                timer: Timer,
+                sysname: str,
+                starpos: Optional[Tuple[float, float, float]],
+                sysaddr: Optional[int],
+                namedsystems: Dict[str, List[EDDNSystem]],
+                regions: Dict[str, EDDNRegion],
+                regionaddrs: Dict[int, EDDNRegion]
+                ) -> Tuple[Optional[EDDNSystem],
+                           Optional[str],
+                           MutableSet[EDDNSystem]]:
+    pginfo = None
+    region_info = None
+    errmsg = None
+    systems: MutableSet[EDDNSystem] = set()
 
-    rows = sqlqueries.get_systems_by_name(
-        conn,
-        (sysname,)
+    system = find_named_system(
+        conn, sysname, starpos, sysaddr, namedsystems, systems
     )
-
-    system = findsystem(
-        conn,
-        rows,
-        sysname,
-        starpos,
-        sysaddr,
-        systems
-    )
-
-    timer.time('sysselectname')
-
-    if system is not None:
-        return (system, None, None)
 
     timer.time('sysquery', 0)
-    edtsid64 = edtslookup.find_edts_system_id64(
-        sysname,
-        sysaddr,
-        starpos
-    )
 
-    if edtsid64 is not None:
-        timer.time('sysqueryedts', 0)
-        modsysaddr = id64_to_modsysaddr(edtsid64)
-        rows = sqlqueries.get_systems_by_modsysaddr(
-            conn,
-            (modsysaddr,)
+    if system is None:
+        ispgname, modsysaddr, pginfo, errmsg = pgname_to_modsysaddr(
+            regions, sysname
         )
 
-        system = findsystem(
-            conn,
-            rows,
+        if ispgname and modsysaddr is not None and pginfo is not None:
+            region_info = pginfo.region_info
+
+            system = find_system_by_modsysaddr(
+                conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
+            )
+
+    if system is None and errmsg is None and sysaddr is not None:
+        modsysaddr = id64_to_modsysaddr(sysaddr)
+
+        if region_info is None:
+            region_info = regionaddrs.get(modsysaddr >> 40)
+
+        system = find_system_by_modsysaddr(
+            conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
+        )
+
+    if system is None and errmsg is None:
+        system = find_system_by_name(
+            conn, timer, sysname, sysaddr, starpos, systems
+        )
+
+    if system is None and errmsg is None:
+        timer.time('sysquery', 0)
+        edtsid64 = edtslookup.find_edts_system_id64(
             sysname,
-            starpos,
             sysaddr,
-            systems
+            starpos
         )
 
-        timer.time('sysselectmaddr')
+        if edtsid64 is not None:
+            timer.time('sysqueryedts', 0)
+            modsysaddr = id64_to_modsysaddr(edtsid64)
+            system = find_system_by_modsysaddr(
+                conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
+            )
 
-        if system is not None:
-            timer.time('sysqueryedts')
-            return (system, None, None)
+            if system is not None:
+                timer.time('sysqueryedts')
 
-    timer.time('sysqueryedts', 0)
-    rows = sqlqueries.get_systems_by_name(
-        conn,
-        (sysname,)
-    )
+    if system is None and errmsg is None:
+        system = find_system_by_name(
+            conn, timer, sysname, None, starpos, systems
+        )
 
-    system = findsystem(
-        conn,
-        rows,
-        sysname,
-        starpos,
-        None,
-        systems
-    )
+    if system is None and errmsg is None:
+        system = add_system(
+            conn, sysname, starpos, region_info, modsysaddr, pginfo
+        )
 
-    timer.time('sysselectname')
+    if system is None and errmsg is None:
+        find_candidates(conn, timer, starpos, systems)
 
-    if system is not None:
-        return (system, None, None)
+        errmsg = 'Unable to resolve system'
 
-    # if starpos is None:
-    #    import pdb; pdb.set_trace()
+    return (system, errmsg, systems)
 
-    if region_info is not None and modsysaddr is not None:
+
+def find_named_system(conn: DBConnection,
+                      sysname: str,
+                      starpos: Optional[Tuple[float, float, float]],
+                      sysaddr: Optional[int],
+                      namedsystems: Dict[str, List[EDDNSystem]],
+                      systems: MutableSet[EDDNSystem]
+                      ):
+    namedsystemlist = namedsystems.get(sysname)
+
+    if namedsystemlist is not None:
+        return findsystem(
+            conn, namedsystemlist, sysname, starpos, sysaddr, systems
+        )
+    else:
+        return None
+
+
+def add_system(conn: DBConnection,
+               sysname: str,
+               starpos: Optional[Tuple[float, float, float]],
+               region_info: Optional[EDDNRegion],
+               modsysaddr: Optional[int],
+               pginfo: Optional[PGSysInfo]
+               ):
+    if starpos is not None:
+        vx = int((starpos[0] + 49985) * 32)
+        vy = int((starpos[1] + 40985) * 32)
+        vz = int((starpos[2] + 24105) * 32)
         raddr = (((vz // 40960) << 13)
                  | ((vy // 40960) << 7)
                  | (vx // 40960))
+    else:
+        vx = 0
+        vy = 0
+        vz = 0
+        raddr = 0
 
-        if starpos is None or raddr == modsysaddr >> 40:
-            sysid = sqlqueries.insert_system(
+    if (region_info is not None
+            and modsysaddr is not None
+            and (starpos is None or raddr == modsysaddr >> 40)):
+        sysid = sqlqueries.insert_system(
+            conn,
+            (
+                modsysaddr,
+                vx,
+                vy,
+                vz,
+                region_info.is_sphere_sector,
+                0
+            )
+        )
+
+        if region_info.is_sphere_sector and pginfo is not None:
+            sqlqueries.insert_sphere_sector_system(
                 conn,
                 (
+                    sysid,
                     modsysaddr,
-                    vx,
-                    vy,
-                    vz,
-                    region_info.is_sphere_sector,
-                    0
+                    region_info.id,
+                    pginfo.c1,
+                    pginfo.c2,
+                    pginfo.c3,
+                    pginfo.masscode,
+                    pginfo.n1,
+                    pginfo.n2
                 )
             )
 
-            if region_info.is_sphere_sector:
-                sqlqueries.insert_sphere_sector_system(
-                    conn,
-                    (
-                        sysid,
-                        modsysaddr,
-                        region_info.id,
-                        mid1a,
-                        mid1b,
-                        mid2,
-                        sz,
-                        mid3,
-                        seq
-                    )
-                )
+        if starpos is not None:
+            return EDDNSystem(
+                sysid,
+                modsysaddr_to_id64(modsysaddr),
+                sysname,
+                starpos[0],
+                starpos[1],
+                starpos[2],
+                True
+            )
+        else:
+            return EDDNSystem(
+                sysid,
+                modsysaddr_to_id64(modsysaddr),
+                sysname,
+                -49985,
+                -40985,
+                -24105,
+                False
+            )
+    else:
+        return None
 
-            if starpos is not None:
-                return (
-                    EDDNSystem(
-                        sysid,
-                        modsysaddr_to_id64(modsysaddr),
-                        sysname,
-                        starpos[0],
-                        starpos[1],
-                        starpos[2],
-                        True
-                    ),
-                    None,
-                    None
-                )
-            else:
-                return (
-                    EDDNSystem(
-                        sysid,
-                        modsysaddr_to_id64(modsysaddr),
-                        sysname,
-                        -49985,
-                        -40985,
-                        -24105,
-                        False
-                    ),
-                    None,
-                    None
-                )
 
-    elif sysaddr is not None:
-        modsysaddr = id64_to_modsysaddr(sysaddr)
+def find_candidates(conn: DBConnection,
+                    timer: Timer,
+                    starpos: Optional[Tuple[float, float, float]],
+                    systems: MutableSet[EDDNSystem]
+                    ):
+    if starpos is not None:
+        vx = int((starpos[0] + 49985) * 32)
+        vy = int((starpos[1] + 40985) * 32)
+        vz = int((starpos[2] + 24105) * 32)
         raddr = (((vz // 40960) << 13)
                  | ((vy // 40960) << 7)
                  | (vx // 40960))
 
-        if starpos is None or raddr == modsysaddr >> 40:
-            sysid = sqlqueries.insert_system(
-                conn,
-                (modsysaddr, vx, vy, vz, 0, 1)
-            )
-
-            sqlqueries.insert_named_system(conn, (sysid, sysname))
-            sqlqueries.set_system_invalid(conn, (sysid,))
-
-            if starpos is not None:
-                return (
-                    EDDNSystem(
-                        sysid,
-                        modsysaddr_to_id64(modsysaddr),
-                        sysname,
-                        starpos[0],
-                        starpos[1],
-                        starpos[2],
-                        True
-                    ),
-                    None,
-                    None
-                )
-
-            else:
-                return (
-                    EDDNSystem(
-                        sysid,
-                        modsysaddr_to_id64(modsysaddr),
-                        sysname,
-                        -49985,
-                        -40985,
-                        -24105,
-                        False
-                    ),
-                    None,
-                    None
-                )
-
-    raddr = (((vz // 40960) << 13)
-             | ((vy // 40960) << 7)
-             | (vx // 40960))
-
-    if starpos is not None:
         for mc in range(0, 8):
             rx = (vx % 40960) >> mc
             ry = (vy % 40960) >> mc
@@ -664,19 +491,100 @@ def getsystem(conn: DBConnection,
 
     timer.time('sysselectmaddr')
 
-    errmsg = ('Unable to resolve system '
-              f'{sysname} [{sysaddr}] ({x},{y},{z})\n')
-    # sys.stderr.write(errmsg)
-    # sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
-    # raise ValueError('Unable to find system')
-    return (
-        None,
-        errmsg,
-        getrejectdata(
-            regions,
-            regionaddrs,
-            sysname,
-            sysaddr,
-            systems
-        )
+
+def find_system_by_name(conn: DBConnection,
+                        timer: Timer,
+                        sysname: str,
+                        sysaddr: Optional[int],
+                        starpos: Optional[Tuple[float, float, float]],
+                        systems: MutableSet[EDDNSystem]
+                        ) -> Optional[EDDNSystem]:
+    rows = sqlqueries.get_systems_by_name(
+        conn,
+        (sysname,)
     )
+
+    system = findsystem(
+        conn,
+        rows,
+        sysname,
+        starpos,
+        sysaddr,
+        systems
+    )
+
+    timer.time('sysselectname')
+
+    return system
+
+
+def find_system_by_modsysaddr(conn: DBConnection,
+                              timer: Timer,
+                              sysname: str,
+                              sysaddr: Optional[int],
+                              starpos: Optional[Tuple[float, float, float]],
+                              systems: MutableSet[EDDNSystem],
+                              modsysaddr: int
+                              ) -> Optional[EDDNSystem]:
+    rows = sqlqueries.get_systems_by_modsysaddr(
+        conn,
+        (modsysaddr,)
+    )
+
+    system = findsystem(
+        conn,
+        rows,
+        sysname,
+        starpos,
+        sysaddr,
+        systems
+    )
+
+    timer.time('sysselectmaddr')
+
+    return system
+
+
+def getsystem(conn: DBConnection,
+              timer: Timer,
+              sysname: str,
+              x: Optional[float],
+              y: Optional[float],
+              z: Optional[float],
+              sysaddr: Optional[int],
+              namedsystems: Dict[str, List[EDDNSystem]],
+              regions: Dict[str, EDDNRegion],
+              regionaddrs: Dict[int, EDDNRegion]
+              ) -> Union[Tuple[EDDNSystem, None, None],
+                         Tuple[None, str, dict]]:
+    starpos: Optional[Tuple[float, float, float]]
+
+    if x is not None and y is not None and z is not None:
+        starpos = (
+            math.floor(x * 32 + 0.5) / 32.0,
+            math.floor(y * 32 + 0.5) / 32.0,
+            math.floor(z * 32 + 0.5) / 32.0
+        )
+    else:
+        starpos = None
+
+    system, errmsg, systems = find_system(
+        conn, timer, sysname, starpos, sysaddr,
+        namedsystems, regions, regionaddrs
+    )
+
+    if system is not None:
+        return (system, None, None)
+    else:
+        errmsg = f'{errmsg} {sysname} [{sysaddr}] ({x},{y},{z})\n'
+        return (
+            None,
+            errmsg,
+            getrejectdata(
+                regions,
+                regionaddrs,
+                sysname,
+                sysaddr,
+                systems
+            )
+        )
