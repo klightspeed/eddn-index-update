@@ -267,91 +267,6 @@ def id64_to_pgname(regionaddrs: Dict[int, EDDNRegion],
         return (None, errmsg)
 
 
-def find_system(conn: DBConnection,
-                timer: Timer,
-                sysname: str,
-                starpos: Optional[Tuple[float, float, float]],
-                sysaddr: Optional[int],
-                namedsystems: Dict[str, List[EDDNSystem]],
-                regions: Dict[str, EDDNRegion],
-                regionaddrs: Dict[int, EDDNRegion]
-                ) -> Tuple[Optional[EDDNSystem],
-                           Optional[str],
-                           MutableSet[EDDNSystem]]:
-    pginfo = None
-    region_info = None
-    errmsg = None
-    systems: MutableSet[EDDNSystem] = set()
-
-    system = find_named_system(
-        conn, sysname, starpos, sysaddr, namedsystems, systems
-    )
-
-    timer.time('sysquery', 0)
-
-    if system is None:
-        ispgname, modsysaddr, pginfo, errmsg = pgname_to_modsysaddr(
-            regions, sysname
-        )
-
-        if ispgname and modsysaddr is not None and pginfo is not None:
-            region_info = pginfo.region_info
-
-            system = find_system_by_modsysaddr(
-                conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
-            )
-
-    if system is None and errmsg is None and sysaddr is not None:
-        modsysaddr = id64_to_modsysaddr(sysaddr)
-
-        if region_info is None:
-            region_info = regionaddrs.get(modsysaddr >> 40)
-
-        system = find_system_by_modsysaddr(
-            conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
-        )
-
-    if system is None and errmsg is None:
-        system = find_system_by_name(
-            conn, timer, sysname, sysaddr, starpos, systems
-        )
-
-    if system is None and errmsg is None:
-        timer.time('sysquery', 0)
-        edtsid64 = edtslookup.find_edts_system_id64(
-            sysname,
-            sysaddr,
-            starpos
-        )
-
-        if edtsid64 is not None:
-            timer.time('sysqueryedts', 0)
-            modsysaddr = id64_to_modsysaddr(edtsid64)
-            system = find_system_by_modsysaddr(
-                conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
-            )
-
-            if system is not None:
-                timer.time('sysqueryedts')
-
-    if system is None and errmsg is None:
-        system = find_system_by_name(
-            conn, timer, sysname, None, starpos, systems
-        )
-
-    if system is None and errmsg is None:
-        system = add_system(
-            conn, sysname, starpos, region_info, modsysaddr, pginfo
-        )
-
-    if system is None and errmsg is None:
-        find_candidates(conn, timer, starpos, systems)
-
-        errmsg = 'Unable to resolve system'
-
-    return (system, errmsg, systems)
-
-
 def find_named_system(conn: DBConnection,
                       sysname: str,
                       starpos: Optional[Tuple[float, float, float]],
@@ -370,11 +285,12 @@ def find_named_system(conn: DBConnection,
 
 
 def add_system(conn: DBConnection,
+               namedsystems: Dict[str, List[EDDNSystem]],
                sysname: str,
                starpos: Optional[Tuple[float, float, float]],
-               region_info: Optional[EDDNRegion],
                modsysaddr: Optional[int],
-               pginfo: Optional[PGSysInfo]
+               pginfo: Optional[PGSysInfo],
+               region_info: Optional[EDDNRegion]
                ):
     if starpos is not None:
         vx = int((starpos[0] + 49985) * 32)
@@ -389,8 +305,7 @@ def add_system(conn: DBConnection,
         vz = 0
         raddr = 0
 
-    if (region_info is not None
-            and modsysaddr is not None
+    if (region_info is not None and modsysaddr is not None
             and (starpos is None or raddr == modsysaddr >> 40)):
         sysid = sqlqueries.insert_system(
             conn,
@@ -400,7 +315,7 @@ def add_system(conn: DBConnection,
                 vy,
                 vz,
                 region_info.is_sphere_sector,
-                0
+                0 if pginfo is not None else 1
             )
         )
 
@@ -410,7 +325,7 @@ def add_system(conn: DBConnection,
                 (
                     sysid,
                     modsysaddr,
-                    region_info.id,
+                    pginfo.region_info.id,
                     pginfo.c1,
                     pginfo.c2,
                     pginfo.c3,
@@ -421,7 +336,7 @@ def add_system(conn: DBConnection,
             )
 
         if starpos is not None:
-            return EDDNSystem(
+            system = EDDNSystem(
                 sysid,
                 modsysaddr_to_id64(modsysaddr),
                 sysname,
@@ -431,7 +346,7 @@ def add_system(conn: DBConnection,
                 True
             )
         else:
-            return EDDNSystem(
+            system = EDDNSystem(
                 sysid,
                 modsysaddr_to_id64(modsysaddr),
                 sysname,
@@ -440,6 +355,26 @@ def add_system(conn: DBConnection,
                 -24105,
                 False
             )
+
+        if pginfo is None:
+            sqlqueries.insert_named_system(
+                conn,
+                (sysid, sysname)
+            )
+
+            sqlqueries.set_system_invalid(
+                conn,
+                (sysid, 1)
+            )
+
+            namedsystemlist = namedsystems.get(sysname)
+
+            if namedsystemlist is None:
+                namedsystems[sysname] = [system]
+            else:
+                namedsystemlist.append(system)
+
+        return system
     else:
         return None
 
@@ -543,6 +478,93 @@ def find_system_by_modsysaddr(conn: DBConnection,
     timer.time('sysselectmaddr')
 
     return system
+
+
+def find_system(conn: DBConnection,
+                timer: Timer,
+                sysname: str,
+                starpos: Optional[Tuple[float, float, float]],
+                sysaddr: Optional[int],
+                namedsystems: Dict[str, List[EDDNSystem]],
+                regions: Dict[str, EDDNRegion],
+                regionaddrs: Dict[int, EDDNRegion]
+                ) -> Tuple[Optional[EDDNSystem],
+                           Optional[str],
+                           MutableSet[EDDNSystem]]:
+    pginfo = None
+    region_info = None
+    errmsg = None
+    systems: MutableSet[EDDNSystem] = set()
+
+    system = find_named_system(
+        conn, sysname, starpos, sysaddr, namedsystems, systems
+    )
+
+    timer.time('sysquery', 0)
+
+    if system is None:
+        ispgname, modsysaddr, pginfo, errmsg = pgname_to_modsysaddr(
+            regions, sysname
+        )
+
+        if ispgname and modsysaddr is not None and pginfo is not None:
+            region_info = pginfo.region_info
+
+            system = find_system_by_modsysaddr(
+                conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
+            )
+
+    if system is None and errmsg is None and sysaddr is not None:
+        modsysaddr = id64_to_modsysaddr(sysaddr)
+
+        system = find_system_by_modsysaddr(
+            conn, timer, sysname, sysaddr, starpos, systems, modsysaddr
+        )
+
+    if system is None and errmsg is None:
+        system = find_system_by_name(
+            conn, timer, sysname, sysaddr, starpos, systems
+        )
+
+    if system is None and errmsg is None:
+        timer.time('sysquery', 0)
+        edtsid64 = edtslookup.find_edts_system_id64(
+            sysname,
+            sysaddr,
+            starpos
+        )
+
+        if edtsid64 is not None:
+            timer.time('sysqueryedts', 0)
+            edtsmodsysaddr = id64_to_modsysaddr(edtsid64)
+            system = find_system_by_modsysaddr(
+                conn, timer, sysname, sysaddr,
+                starpos, systems, edtsmodsysaddr
+            )
+
+            if system is not None:
+                timer.time('sysqueryedts')
+
+    if system is None and errmsg is None:
+        system = find_system_by_name(
+            conn, timer, sysname, None, starpos, systems
+        )
+
+    if system is None and errmsg is None:
+        if region_info is None and modsysaddr is not None:
+            region_info = regionaddrs.get(modsysaddr >> 40)
+
+        system = add_system(
+            conn, namedsystems, sysname, starpos,
+            modsysaddr, pginfo, region_info
+        )
+
+    if system is None and errmsg is None:
+        find_candidates(conn, timer, starpos, systems)
+
+        errmsg = 'Unable to resolve system'
+
+    return (system, errmsg, systems)
 
 
 def getsystem(conn: DBConnection,
