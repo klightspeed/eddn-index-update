@@ -13,10 +13,10 @@ import numpy.typing
 import numpy.core.records
 
 from . import loading
-from .types import EDDNSystem, EDDNBody, EDDNFaction, EDDNFile, \
-                   EDSMFile, EDDNRegion, EDDNStation, DTypeEDSMSystem, \
-                   DTypeEDDBSystem, DTypeEDSMBody, KnownBody, \
-                   NPTypeEDSMBody
+from .types import BodyDesignation, EDDNSystem, EDDNBody, EDDNFaction, \
+                   EDDNFile, EDSMFile, EDDNRegion, EDDNStation, \
+                   DTypeEDSMSystem, DTypeEDDBSystem, DTypeEDSMBody, \
+                   KnownBody, NPTypeEDSMBody
 from .timer import Timer
 from . import constants
 from .util import from_db_string
@@ -34,7 +34,7 @@ class EDDNSysDB(object):
     namedsystems: Dict[str, List[EDDNSystem]]
     namedbodies: Dict[int, Dict[str, List[EDDNBody]]]
     parentsets: Dict[Tuple[int, str], int]
-    bodydesigs: Dict[str, Tuple[int, int]]
+    bodydesigs: Dict[str, Tuple[int, BodyDesignation]]
     software: Dict[str, int]
     factions: Dict[str, List[EDDNFaction]]
     edsmsysids: numpy.core.records.recarray

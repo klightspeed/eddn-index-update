@@ -304,7 +304,13 @@ query_body_designation = SQLQuery('''
     SELECT
         Id,
         BodyDesignation,
-        BodyCategory
+        BodyCategory,
+        Stars,
+        Planet,
+        Moon1,
+        Moon2,
+        Moon3,
+        IsUsed
     FROM SystemBodyDesignations
     WHERE BodyDesignation = %s
 ''')
@@ -544,7 +550,13 @@ query_body_designations = SQLQuery('''
     SELECT
         Id,
         BodyDesignation,
-        BodyCategory
+        BodyCategory,
+        Stars,
+        Planet,
+        Moon1,
+        Moon2,
+        Moon3,
+        IsUsed
     FROM SystemBodyDesignations
     WHERE IsUsed = 1
 ''')
@@ -703,12 +715,11 @@ query_bodies_by_name = SQLQuery('''
         SystemName,
         SystemId,
         BodyId,
-        BodyCategoryDescription,
+        BodyCategory,
         ArgOfPeriapsis,
         ValidFrom,
         ValidUntil,
         IsRejected,
-        BodyCategory,
         BodyDesignationId
     FROM SystemBodyNames sn
     WHERE SystemId = %s

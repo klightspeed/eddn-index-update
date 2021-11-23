@@ -128,6 +128,17 @@ class KnownBody(TypedDict):
     BodyDesignationId: int
 
 
+class BodyDesignation(NamedTuple):
+    BodyCategory: int
+    Stars: int
+    Planet: int
+    Moon1: int
+    Moon2: int
+    Moon3: int
+    IsUsed: bool
+    BodyDesignation: str
+
+
 DTypeEDSMSystem = numpy.dtype(
     [
         ('system_id', '<i4'),

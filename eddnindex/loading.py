@@ -11,7 +11,9 @@ import numpy
 import numpy.typing
 import numpy.core.records
 
-from .types import EDDNSystem, EDDNBody, EDDNFaction, \
+from eddnindex.bodies import get_body_designation
+
+from .types import BodyDesignation, EDDNSystem, EDDNBody, EDDNFaction, \
                    EDDNRegion, DTypeEDSMSystem, \
                    DTypeEDDBSystem, DTypeEDSMBody, KnownBody
 from .timer import Timer
@@ -285,14 +287,26 @@ def loadsoftware(conn: DBConnection,
 
 def loadbodydesigs(conn: DBConnection,
                    timer: Timer
-                   ) -> Dict[str, Tuple[int, int]]:
+                   ) -> Dict[str, Tuple[int, BodyDesignation]]:
     sys.stderr.write('Loading Body Designations\n')
     rows = sqlqueries.get_body_designations(conn, None)
     timer.time('sqlbodydesigs', len(rows))
-    bodydesigs: Dict[str, Tuple[int, int]] = {}
+    bodydesigs: Dict[str, Tuple[int, BodyDesignation]] = {}
 
     for row in rows:
-        bodydesigs[row[1]] = (int(row[0]), int(row[2]))
+        bodydesigs[row[1]] = (
+            row[0],
+            BodyDesignation(
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[1]
+            )
+        )
 
     timer.time('loadbodydesigs', len(rows))
 
@@ -427,7 +441,7 @@ def loadfactions(conn: DBConnection,
 
 def loadknownbodies(conn: DBConnection,
                     timer: Timer,
-                    bodydesigs: Dict[str, Tuple[int, int]],
+                    bodydesigs: Dict[str, Tuple[int, BodyDesignation]],
                     known_bodies_sheet_uri: str
                     ) -> Dict[str, Dict[str, List[KnownBody]]]:
     sys.stderr.write('Loading Known Bodies\n')
@@ -451,24 +465,9 @@ def loadknownbodies(conn: DBConnection,
                 bodydesig = fields[6]
                 desig = bodydesig[len(sysname):]
 
-                if desig not in bodydesigs:
-                    row = sqlqueries.get_body_designation(
-                        conn,
-                        (desig,)
-                    )
+                desigid, _ = get_body_designation(conn, bodydesigs, desig)
 
-                    if row and row[1] == desig:
-                        desigid = int(row[0])
-                        category = int(row[2])
-                        bodydesigs[desig] = (desigid, category)
-                        sqlqueries.set_body_designation_used(
-                            conn,
-                            (desigid,)
-                        )
-
-                if desig in bodydesigs:
-                    desigid, category = bodydesigs[desig]
-
+                if desigid is not None:
                     if sysname not in knownbodies:
                         knownbodies[sysname] = {}
 
