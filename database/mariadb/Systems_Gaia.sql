@@ -1,0 +1,9 @@
+CREATE TABLE `Systems_Gaia` (
+	`Id` INT(11) NOT NULL,
+	`GaiaDR2SourceId` BIGINT(20) NOT NULL,
+	PRIMARY KEY (`Id`) USING BTREE
+)
+COLLATE='utf8_general_ci'
+ENGINE=Aria
+ROW_FORMAT=FIXED
+;;

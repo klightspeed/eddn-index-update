@@ -1,0 +1,19 @@
+CREATE TABLE `Files` (
+	`Id` INT(11) NOT NULL AUTO_INCREMENT,
+	`FileName` VARCHAR(128) NOT NULL COLLATE 'utf8_general_ci',
+	`Date` DATE NULL DEFAULT NULL,
+	`PrimarySchema` VARCHAR(128) NULL DEFAULT NULL COLLATE 'utf8_general_ci',
+	`EventType` VARCHAR(32) NULL DEFAULT NULL COLLATE 'utf8_general_ci',
+	`LineCount` INT(11) NULL DEFAULT NULL,
+	`IsTest` BIT(1) NOT NULL DEFAULT b'0',
+	`CompressedSize` BIGINT(20) NULL DEFAULT NULL,
+	`UncompressedSize` BIGINT(20) NULL DEFAULT NULL,
+	`PopulatedLineCount` INT(11) NULL DEFAULT NULL,
+	`StationLineCount` INT(11) NULL DEFAULT NULL,
+	`NavRouteSystemCount` INT(11) NULL DEFAULT NULL,
+	PRIMARY KEY (`Id`) USING BTREE,
+	INDEX `FileName` (`FileName`) USING BTREE
+)
+COLLATE='utf8_general_ci'
+ENGINE=InnoDB
+;;

@@ -1,0 +1,195 @@
+{
+	"table": "Files",
+	"rows":
+	[
+		{
+			"FilePrefix": "BlackMarket",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/blackmarket/1",
+			"EventType": null,
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "BlackMarket",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/blackmarket/1",
+			"EventType": null,
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Commodity",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/commodity/1",
+			"EventType": null,
+			"MinDate": "2015-01-01",
+			"MaxDate": "2015-06-30"
+		},
+		{
+			"FilePrefix": "Commodity",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/commodity/2",
+			"EventType": null,
+			"MinDate": "2015-07-01",
+			"MaxDate": "2016-10-24"
+		},
+		{
+			"FilePrefix": "Commodity",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/commodity/3",
+			"EventType": null,
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Commodity",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/commodity/3",
+			"EventType": null,
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.CarrierJump",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/journal/1",
+			"EventType": "CarrierJump",
+			"MinDate": "2020-06-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.CodexEntry",
+			"PrimarySchema": "https://eddn.edcd.io/schemas/codexentry/1",
+			"EventType": "CodexEntry",
+			"MinDate": "2021-10-21",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.Docked",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/journal/1",
+			"EventType": "Docked",
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Journal.Docked",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/journal/1",
+			"EventType": "Docked",
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.FSDJump",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/journal/1",
+			"EventType": "FSDJump",
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Journal.FSDJump",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/journal/1",
+			"EventType": "FSDJump",
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.FSSDiscoveryScan",
+			"PrimarySchema": "https://eddn.edcd.io/schemas/fssdiscoveryscan/1",
+			"EventType": "FSSDiscoveryScan",
+			"MinDate": "2021-10-21",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.Location",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/journal/1",
+			"EventType": "Location",
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Journal.Location",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/journal/1",
+			"EventType": "Location",
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.NavBeaconScan",
+			"PrimarySchema": "https://eddn.edcd.io/schemas/navbeaconscan/1",
+			"EventType": "NavBeaconScan",
+			"MinDate": "2021-10-21",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.NavRoute",
+			"PrimarySchema": "https://eddn.edcd.io/schemas/navroute/1",
+			"EventType": "NavRoute",
+			"MinDate": "2021-10-21",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.SAASignalsFound",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/journal/1",
+			"EventType": "SAASignalsFound",
+			"MinDate": "2019-10-01",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.Scan",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/journal/1",
+			"EventType": "Scan",
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Journal.Scan",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/journal/1",
+			"EventType": "Scan",
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Journal.ScanBaryCentre",
+			"PrimarySchema": "https://eddn.edcd.io/schemas/scanbarycentre/1",
+			"EventType": "ScanBaryCentre",
+			"MinDate": "2021-10-21",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Outfitting",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/outfitting/1",
+			"EventType": null,
+			"MinDate": "2015-07-01",
+			"MaxDate": "2016-10-24"
+		},
+		{
+			"FilePrefix": "Outfitting",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/outfitting/2",
+			"EventType": null,
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Outfitting",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/outfitting/2",
+			"EventType": null,
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		},
+		{
+			"FilePrefix": "Shipyard",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/shipyard/1",
+			"EventType": null,
+			"MinDate": "2015-07-01",
+			"MaxDate": "2016-10-24"
+		},
+		{
+			"FilePrefix": "Shipyard",
+			"PrimarySchema": "http://schemas.elite-markets.net/eddn/shipyard/2",
+			"EventType": null,
+			"MinDate": "2016-10-25",
+			"MaxDate": "2017-08-08"
+		},
+		{
+			"FilePrefix": "Shipyard",
+			"PrimarySchema": "http://eddn.edcd.io/schemas/shipyard/2",
+			"EventType": null,
+			"MinDate": "2017-08-09",
+			"MaxDate": "9999-12-31"
+		}
+	]
+}

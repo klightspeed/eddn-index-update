@@ -1,0 +1,13 @@
+CREATE TABLE `Systems_Simbad` (
+	`Id` INT(11) NOT NULL,
+	`SimbadName` VARCHAR(50) NOT NULL COLLATE 'utf8_general_ci',
+	`SimbadIdent` VARCHAR(50) NOT NULL COLLATE 'utf8_general_ci',
+	`RA_J2000` DOUBLE NOT NULL,
+	`Dec_J2000` DOUBLE NOT NULL,
+	`Parallax` DOUBLE NULL DEFAULT NULL,
+	`EpochError_J2000B1950` BIT(1) NOT NULL,
+	PRIMARY KEY (`Id`) USING BTREE
+)
+COLLATE='utf8_general_ci'
+ENGINE=InnoDB
+;;
