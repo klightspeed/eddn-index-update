@@ -211,6 +211,7 @@ def process_line(sysdb: EDDNSysDB,
             marketid = body.get('MarketID')
             stationtype = body.get('StationType')
             bodyname = body.get('Body')
+            name = body.get('Name')
             bodyid = body.get('BodyID')
             bodytype = body.get('BodyType')
             scanbodyname = body.get('BodyName')
@@ -239,6 +240,9 @@ def process_line(sysdb: EDDNSysDB,
             rejectout.write(json.dumps(msg) + '\n')
             timer.time('error')
         else:
+            if eventtype == 'ApproachSettlement':
+                stationname = name
+
             if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
                 marketid = None
             sqltimestamp = timestamp_to_datetime(timestamp)
