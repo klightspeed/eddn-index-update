@@ -3534,20 +3534,20 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
 
                         mktitems = [(0, nullitem)]
 
-                        if commodities is not None:
+                        if commodities is not None and type(commodities) is list:
                             for n, commodity in enumerate(commodities):
                                 marketitem = sysdb.getmarketitem(timer, commodity.get('name'), 'Commodity')
                                 mktitems += [(n + 1, marketitem)]
-                        elif modules is not None:
+                        elif modules is not None and type(modules) is list:
                             for n, item in enumerate(modules):
                                 marketitem = sysdb.getmarketitem(timer, item, 'Module')
                                 mktitems += [(n + 1, marketitem)]
-                        elif ships is not None:
+                        elif ships is not None and type(ships) is list:
                             for n, item in enumerate(ships):
                                 marketitem = sysdb.getmarketitem(timer, item, 'Ship')
                                 mktitems += [(n + 1, marketitem)]
 
-                        if prohibited is not None:
+                        if prohibited is not None and type(prohibited) is list:
                             for n, item in enumerate(prohibited):
                                 marketitem = sysdb.getmarketitem(timer, item, 'Commodity')
                                 mktitems += [(-1 - n, marketitem)]
