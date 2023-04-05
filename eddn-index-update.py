@@ -1812,6 +1812,7 @@ class EDDNSysDB(object):
         itemid = c.lastrowid
 
         item = EDDNMarketItem(itemid, name, type)
+        self.marketitems[(type, name)] = item
 
         return item
 
