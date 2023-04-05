@@ -1640,7 +1640,7 @@ class EDDNSysDB(object):
     def getfaction(self, timer, name, government, allegiance):
         factions = None
 
-        if government[:12] == '$government_' and government[-1] == ';':
+        if government is not None and government[:12] == '$government_' and government[-1] == ';':
             government = government[12:-1]
 
         if name in self.factions:
@@ -1648,7 +1648,7 @@ class EDDNSysDB(object):
             if type(factions) is not list:
                 factions = [factions]
             for faction in factions:
-                if faction.government == government and (allegiance is None or faction.allegiance == allegiance):
+                if (government is None or faction.government == government) and (allegiance is None or faction.allegiance == allegiance):
                     return faction
 
         if allegiance is None:
