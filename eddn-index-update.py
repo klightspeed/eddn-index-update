@@ -126,10 +126,12 @@ ed400date = datetime.strptime('2021-05-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 
 EDDNSystem = namedtuple('EDDNSystem', ['id', 'id64', 'name', 'x', 'y', 'z', 'hascoords'])
 EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'loctype', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil', 'test'])
-EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'factionlinecount', 'navroutesystemcount', 'populatedlinecount', 'stationlinecount', 'routesystemcount', 'test'])
+EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'factionlinecount', 'navroutesystemcount', 'marketitemcount', 'populatedlinecount', 'stationlinecount', 'routesystemcount', 'marketitemlinecount', 'test'])
 EDDNRegion = namedtuple('EDDNRegion', ['id', 'name', 'x0', 'y0', 'z0', 'sizex', 'sizey', 'sizez', 'regionaddr', 'isharegion'])
 EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'bodyid', 'category', 'argofperiapsis', 'validfrom', 'validuntil', 'isrejected'])
 EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
+EDDNMarketStation = namedtuple('EDDNMarketStation', ['id', 'marketid', 'name', 'systemname', 'isrejected', 'validfrom', 'validuntil'])
+EDDNMarketItem = namedtuple('EDDNMarketItem', ['id', 'name', 'type'])
 EDSMFile = namedtuple('EDSMFile', ['id', 'name', 'date', 'linecount', 'bodylinecount', 'comprsize'])
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
@@ -138,6 +140,7 @@ argparser.add_argument('--reprocess-all', dest='reprocessall', action='store_con
 argparser.add_argument('--nojournal', dest='nojournal', action='store_const', const=True, default=False, help='Skip EDDN Journal messages')
 argparser.add_argument('--market', dest='market', action='store_const', const=True, default=False, help='Process market/shipyard/outfitting messages')
 argparser.add_argument('--navroute', dest='navroute', action='store_const', const=True, default=False, help='Process EDDN NavRoute messages')
+argparser.add_argument('--fcmaterials', dest='fcmaterials', action='store_const', const=True, default=False, help='Process EDDN Fleet Carrier Materials messages')
 argparser.add_argument('--edsmsys', dest='edsmsys', action='store_const', const=True, default=False, help='Process EDSM systems dump')
 argparser.add_argument('--edsmbodies', dest='edsmbodies', action='store_const', const=True, default=False, help='Process EDSM bodies dump')
 argparser.add_argument('--edsmmissingbodies', dest='edsmmissingbodies', action='store_const', const=True, default=False, help='Process EDSM missing bodies')
@@ -218,6 +221,7 @@ class EDDNSysDB(object):
         self.bodydesigs = {}
         self.software = {}
         self.factions = {}
+        self.marketitems = {}
         self.knownbodies = {}
         self.edsmsysids = None
         self.edsmbodyids = None
@@ -236,6 +240,7 @@ class EDDNSysDB(object):
                 'sqlsoftware',
                 'sqlbodydesigs',
                 'sqlfactions',
+                'sqlmarketitems',
                 'load',
                 'loadname',
                 'loadregion',
@@ -247,6 +252,7 @@ class EDDNSysDB(object):
                 'loadsoftware',
                 'loadbodydesigs',
                 'loadfactions',
+                'loadmarketitems',
                 'loadknownbodies'
             })
             self.loadregions(conn, timer)
@@ -256,6 +262,7 @@ class EDDNSysDB(object):
             self.loadsoftware(conn, timer)
             self.loadbodydesigs(conn, timer)
             self.loadfactions(conn, timer)
+            self.loadmarketitems(conn)
             self.loadknownbodies(timer)
 
             if loadedsmsys or loadedsmbodies:
@@ -530,6 +537,19 @@ class EDDNSysDB(object):
                 self.factions[fi.name] += [fi]
 
         timer.time('loadfactions')
+
+    def loadmarketitems(self, conn, timer):
+        sys.stderr.write('Loading Market Items\n')
+        c = mysql.makestreamingcursor(conn)
+        c.execute('SELECT Id, Name, Type FROM MarketItems')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sqlmarketitems')
+
+        for row in rows:
+            self.marketitems[(row[1], row[2])] = EDDNMarketItem(row[0], row[1], row[2])
+
+        timer.time('loadmarketitems')
 
     def loadknownbodies(self, timer):
         sys.stderr.write('Loading Known Bodies\n')
@@ -1221,6 +1241,108 @@ class EDDNSysDB(object):
              (marketid, name,        sysname,    sysid,    stationtype, stationtype_location, bodyname, bodyid, validfrom, validuntil, test))
         return (EDDNStation(c.lastrowid, marketid, name, sysname, sysid, stationtype, stationtype_location or stationtype, bodyname, bodyid, False, validfrom, validuntil, test), None, None)
 
+    def getmarketstation(self, name, sysname, marketid, timestamp):
+        if name is None or name == '':
+            return (None, 'No station name')
+
+        if sysname is None or sysname == '':
+            return (None, 'No system name')
+
+        if timestamp is None:
+            return (None, 'No timestamp')
+
+        if carriernamere.match(name):
+            sysname = ''
+
+        c = self.conn.cursor()
+        c.execute('SELECT Id, MarketId, StationName, SystemName, IsRejected, ValidFrom, ValidUntil FROM MarketStations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
+        stations = [ EDDNMarketStation(row[0], row[1], row[2], row[3], row[4] == b'\x01', row[5], row[6]) for row in c ]
+
+        candidates = []
+
+        for station in stations:
+            replace = {}
+
+            if marketid is not None:
+                if station.marketid is not None and marketid != station.marketid:
+                    continue
+                else:
+                    replace['marketid'] = marketid
+
+            candidates += [ (station, replace) ]
+
+        if marketid is not None and marketid >= 3600000000 and marketid < 3700000000:
+            candidates = [ c for c in candidates if c[0].validfrom <= timestamp and c[0].validuntil > timestamp ]
+
+        if len(candidates) > 1 and marketid is not None:
+            midcandidates = [ c for c in candidates if c[0].marketid is not None ]
+            if len(midcandidates) == 1:
+                candidates = midcandidates
+
+        if len(candidates) > 1:
+            candidates = [ c for c in candidates if not c[0].isrejected and c[0].validfrom <= timestamp and c[0].validuntil > timestamp ]
+
+        if len(candidates) == 2:
+            if candidates[0][0].validfrom > candidates[1][0].validfrom and candidates[0][0].validuntil < candidates[1][0].validuntil:
+                candidates = [ candidates[0] ]
+            elif candidates[1][0].validfrom > candidates[0][0].validfrom and candidates[1][0].validuntil < candidates[0][0].validuntil:
+                candidates = [ candidates[1] ]
+            elif candidates[0][0].validuntil == candidates[1][0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[0][0].validuntil - timedelta(hours = 13):
+                    candidates = [ candidates[0] ]
+                else:
+                    candidates = [ candidates[1] ]
+            elif candidates[1][0].validuntil == candidates[0][0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[1][0].validuntil - timedelta(hours = 13):
+                    candidates = [ candidates[1] ]
+                else:
+                    candidates = [ candidates[0] ]
+
+        if len(candidates) == 1:
+            station, replace = candidates[0]
+
+            if len(replace) != 0:
+                station = self.updatemarketstation(station, **replace)
+
+            return (station, None, None)
+        elif len(candidates) > 1:
+            #import pdb; pdb.set_trace()
+            return (
+                None,
+                'More than 1 match',
+                [{
+                    'station': {
+                        'id': s.id,
+                        'stationName': s.name,
+                        'marketId': s.marketid,
+                        'systemName': s.systemname,
+                        'isRejected': True if s.isrejected else False,
+                        'validFrom': s.validfrom.isoformat(),
+                        'validUntil': s.validuntil.isoformat()
+                    },
+                    'replace': r
+                } for s, r in candidates])
+
+        validfrom = datetime.strptime('2014-01-01 00:00:00', '%Y-%m-%d %H:%M:%S')
+        validuntil = datetime.strptime('9999-12-31 00:00:00', '%Y-%m-%d %H:%M:%S')
+
+        if marketid is not None:
+            if marketid >= 3789600000:
+                validfrom = ed400date
+            elif marketid >= 3700000000:
+                validfrom = ed370date
+            elif marketid >= 3600000000:
+                validfrom = megashipweek0 + timedelta(weeks = math.floor((timestamp - megashipweek0).total_seconds() / 86400 / 7), hours = -2)
+                validuntil = validfrom + timedelta(days = 7, hours = 15)
+
+        c = self.conn.cursor()
+        c.execute(
+            'INSERT INTO MarketStations ' +
+            '(MarketId, StationName, SystemName, ValidFrom, ValidUntil) VALUES ' +
+            '(%s,       %s,          %s,         %s,        %s)',
+             (marketid, name,        sysname,    validfrom, validuntil))
+        return (EDDNStation(c.lastrowid, marketid, name, sysname, False, validfrom, validuntil), None, None)
+
     def insertbodyparents(self, timer, scanbodyid, system, bodyid, parents):
         if parents is not None and bodyid is not None:
             parentjson = json.dumps(parents)
@@ -1491,7 +1613,7 @@ class EDDNSysDB(object):
                 cursor = self.conn.cursor()
                 cursor.execute('UPDATE SystemBodies SET HasBodyId = 1, BodyID = %s WHERE Id = %s', (bodyid, row[0]))
                 timer.time('bodyupdateid')
-            return (EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0), None, None)
+            return (EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body.get('Periapsis')), None, None, 0), None, None)
         elif len(rows) > 1:
             return (
                 None,
@@ -1560,7 +1682,7 @@ class EDDNSysDB(object):
                      (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
                 )
                 timer.time('bodyinsertpg')
-                return (EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 0), None, None)
+                return (EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, 0), None, None)
                 
             if (not ispgname and pgsysre.match(name)) or desigid is None:
                 allrows = []
@@ -1635,7 +1757,7 @@ class EDDNSysDB(object):
             )
             '''
 
-            return (EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body['Periapsis'] if 'Periapsis' in body else None), None, None, 1), None, None)
+            return (EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, 1), None, None)
 
     def getfaction(self, timer, name, government, allegiance):
         factions = None
@@ -1673,6 +1795,25 @@ class EDDNSysDB(object):
             self.factions[name] += [faction]
 
         return faction
+
+    def getmarketitem(self, timer, name, type):
+        item = self.marketitems.get((type, name))
+
+        if item is not None:
+            return item
+
+        c = self.conn.cursor()
+        c.execute(
+            'INSERT INTO MarketItems ' +
+            '(Name, Type) VALUES ' +
+            '(%s, %s)',
+            (name, type)
+        )
+        itemid = c.lastrowid
+
+        item = EDDNMarketItem(itemid, name, type)
+
+        return item
 
     def updatestation(self, station, **kwargs):
         station = station._replace(**kwargs)
@@ -1955,6 +2096,15 @@ class EDDNSysDB(object):
             values
         )
 
+    def addfilelinemarketitems(self, linelist):
+        values = [(fileid, lineno, station.id, entrynum, marketitem.id) for fileid, lineno, station, entrynum, marketitem in linelist]
+        self.conn.cursor().executemany(
+            'INSERT INTO FileLineMarketItems ' +
+            '(FileId, LineNo, MarketStationId, EntryNum, MarketItemId) VALUES ' +
+            '(%s, %s, %s, %s, %s)',
+            values
+        )
+
     def addedsmfilelinebodies(self, linelist):
         values = [(fileid, lineno, edsmbodyid) for fileid, lineno, edsmbodyid in linelist]
         self.conn.cursor().executemany(
@@ -2010,6 +2160,16 @@ class EDDNSysDB(object):
 
         return lines
 
+    def getmarketitemfilelines(self, fileid):
+        cursor = mysql.makestreamingcursor(self.conn)
+        cursor.execute('SELECT LineNo, EntryNum, MarketStationId, MarketItemId FROM FileLineMarketLines WHERE FileId = %s', (fileid,))
+
+        lines = {}
+        for row in cursor:
+            lines[(row[0], row[1])] = (row[2], row[3])
+
+        return lines
+
     def getedsmbodyfilelines(self, fileid):
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute('SELECT MAX(LineNo) FROM EDSMFileLineBodies WHERE FileId = %s', (fileid,))
@@ -2051,6 +2211,11 @@ class EDDNSysDB(object):
         cursor.execute('SELECT FileId, COUNT(*) FROM FileLineNavRoutes GROUP BY FileId')
         navroutelinecounts = { row[0]: row[1] for row in cursor }
 
+        sys.stderr.write('    Getting market item line counts\n')
+        cursor = mysql.makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(*) FROM FileLineMarketItems GROUP BY FileId')
+        marketitemlinecounts = { row[0]: row[1] for row in cursor }
+
         sys.stderr.write('    Getting file info\n')
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute('''
@@ -2063,6 +2228,7 @@ class EDDNSysDB(object):
                 PopulatedLineCount,
                 StationLineCount,
                 NavRouteSystemCount,
+                MarketItemCount,
                 IsTest
             FROM Files f
         ''')
@@ -2074,14 +2240,16 @@ class EDDNSysDB(object):
                 row[2],
                 row[3],
                 row[4],
-                stnlinecounts[row[0]] if row[0] in stnlinecounts else 0,
-                infolinecounts[row[0]] if row[0] in infolinecounts else 0,
-                factionlinecounts[row[0]] if row[0] in factionlinecounts else 0,
-                navroutelinecounts[row[0]] if row[0] in navroutelinecounts else 0,
+                stnlinecounts.get(row[0]) or 0,
+                infolinecounts.get(row[0]) or 0,
+                factionlinecounts.get(row[0]) or 0,
+                navroutelinecounts.get(row[0]) or 0,
+                marketitemlinecounts.get(row[0]) or 0,
                 row[5],
                 row[6],
                 row[7],
-                row[8]
+                row[8],
+                row[9]
             ) for row in cursor 
         }
 
@@ -2120,11 +2288,19 @@ class EDDNSysDB(object):
             ) for row in cursor 
         }
 
-    def updatefileinfo(self, fileid, linecount, totalsize, comprsize, poplinecount, stnlinecount, navroutesystemcount):
+    def updatefileinfo(self, fileid, linecount, totalsize, comprsize, poplinecount, stnlinecount, navroutesystemcount, marketitemcount):
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute(
-            'UPDATE Files SET LineCount = %s, CompressedSize = %s, UncompressedSize = %s, PopulatedLineCount = %s, StationLineCount = %s, NavRouteSystemCount = %s WHERE Id = %s',
-            (linecount, comprsize, totalsize, poplinecount, stnlinecount, navroutesystemcount, fileid)
+            'UPDATE Files SET ' +
+            'LineCount = %s, ' +
+            'CompressedSize = %s, ' +
+            'UncompressedSize = %s, ' +
+            'PopulatedLineCount = %s, ' +
+            'StationLineCount = %s, ' +
+            'NavRouteSystemCount = %s, ' +
+            'MarketItemCount = %s ' +
+            'WHERE Id = %s',
+            (linecount, comprsize, totalsize, poplinecount, stnlinecount, navroutesystemcount, marketitemcount, fileid)
         )
 
     def updateedsmfileinfo(self, fileid, linecount, totalsize, comprsize):
@@ -2208,8 +2384,8 @@ def processedsmmissingbodies(sysdb, timer):
                         edsmsysid = msg['systemId']
                         sysname = msg['systemName']
                         timestamp = msg['updateTime'].replace(' ', 'T')
-                        periapsis = msg['argOfPeriapsis'] if 'argOfPeriapsis' in msg else None
-                        semimajor = msg['semiMajorAxis'] if 'semiMajorAxis' in msg else None
+                        periapsis = msg.get('argOfPeriapsis')
+                        semimajor = msg.get('semiMajorAxis')
                         bodytype = msg['type']
                         subtype = msg['subType']
                         sqltimestamp = timestamptosql(timestamp)
@@ -2322,8 +2498,8 @@ def processedsmbodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
                             edsmsysid = msg['systemId']
                             sysname = msg['systemName']
                             timestamp = msg['updateTime'].replace(' ', 'T')
-                            periapsis = msg['argOfPeriapsis'] if 'argOfPeriapsis' in msg else None
-                            semimajor = msg['semiMajorAxis'] if 'semiMajorAxis' in msg else None
+                            periapsis = msg.get('argOfPeriapsis')
+                            semimajor = msg.get('semiMajorAxis')
                             bodytype = msg['type']
                             subtype = msg['subType']
                         except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
@@ -2906,7 +3082,7 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                             msg = json.loads(line)
                             body = msg['message']
                             hdr = msg['header']
-                            eventtype = body['event'] if 'event' in body else None
+                            eventtype = body.get('event')
 
                             if 'StarSystem' in body:
                                 sysname = body['StarSystem']
@@ -2918,25 +3094,29 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                                 sysname = body['StarSystem']
 
                             starpos = body['StarPos']
-                            sysaddr = body['SystemAddress'] if 'SystemAddress' in body else None
-                            stationname = body['StationName'] if 'StationName' in body else None
-                            marketid = body['MarketID'] if 'MarketID' in body else None
-                            stationtype = body['StationType'] if 'StationType' in body else None
-                            bodyname = body['Body'] if 'Body' in body else None
-                            bodyid = body['BodyID'] if 'BodyID' in body else None
-                            bodytype = body['BodyType'] if 'BodyType' in body else None
-                            scanbodyname = body['BodyName'] if 'BodyName' in body else None
-                            parents = body['Parents'] if 'Parents' in body else None
-                            factions = body['Factions'] if 'Factions' in body else None
-                            sysfaction = body['SystemFaction'] if 'SystemFaction' in body else (body['Faction'] if 'Faction' in body else None)
-                            sysgovern = body['SystemGovernment'] if 'SystemGovernment' in body else (body['Government'] if 'Government' in body else None)
+                            sysaddr = body.get('SystemAddress')
+                            stationname = body.get('StationName')
+
+                            if fileinfo.eventtype == 'ApproachSettlement':
+                                stationname = body.get('Name')
+
+                            marketid = body.get('MarketID')
+                            stationtype = body.get('StationType')
+                            bodyname = body.get('Body')
+                            bodyid = body.get('BodyID')
+                            bodytype = body.get('BodyType')
+                            scanbodyname = body.get('BodyName')
+                            parents = body.get('Parents')
+                            factions = body.get('Factions')
+                            sysfaction = body['SystemFaction'] if 'SystemFaction' in body else (body.get('Faction'))
+                            sysgovern = body['SystemGovernment'] if 'SystemGovernment' in body else (body.get('Government'))
                             sysalleg = body['SystemAllegiance'] if 'SystemAllegiance' in body else (body['Allegiance'] if 'Allegiance' in body else '')
-                            stnfaction = body['StationFaction'] if 'StationFaction' in body else None
-                            stngovern = body['StationGovernment'] if 'StationGovernment' in body else None
-                            timestamp = body['timestamp'] if 'timestamp' in body else None
-                            gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
-                            software = hdr['softwareName'] if 'softwareName' in hdr else None
-                            distfromstar = body['DistanceFromArrivalLS'] if 'DistanceFromArrivalLS' in body else None
+                            stnfaction = body.get('StationFaction')
+                            stngovern = body.get('StationGovernment')
+                            timestamp = body.get('timestamp')
+                            gwtimestamp = hdr.get('gatewayTimestamp')
+                            software = hdr.get('softwareName')
+                            distfromstar = body.get('DistanceFromArrivalLS')
                         except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
                             sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
                             msg = {
@@ -3031,10 +3211,10 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
                                                 linefactiondata += [{
                                                     'Name': faction['Name'],
                                                     'Government': faction['Government'],
-                                                    'Allegiance': faction['Allegiance'] if 'Allegiance' in faction else None,
+                                                    'Allegiance': faction.get('Allegiance'),
                                                     'EntryNum': n
                                                 }]
-                                                linefactions += [(n, sysdb.getfaction(timer, faction['Name'], faction['Government'], faction['Allegiance'] if 'Allegiance' in faction else None))]
+                                                linefactions += [(n, sysdb.getfaction(timer, faction['Name'], faction['Government'], faction.get('Allegiance')))]
                                         if sysfaction is not None:
                                             if type(sysfaction) is dict and 'Name' in sysfaction:
                                                 sysfaction = sysfaction['Name']
@@ -3141,7 +3321,7 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
 
                 sys.stderr.write('  {0}\n'.format(linecount))
                 sys.stderr.flush()
-                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, poplinecount, stnlinecount, 0)
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, poplinecount, stnlinecount, 0, 0)
 
 def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     #if fileinfo.eventtype in ('Location'):
@@ -3171,10 +3351,10 @@ def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejecto
                         msg = json.loads(line)
                         body = msg['message']
                         hdr = msg['header']
-                        timestamp = body['timestamp'] if 'timestamp' in body else None
+                        timestamp = body.get('timestamp')
                         route = list(body['Route'])
-                        gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
-                        software = hdr['softwareName'] if 'softwareName' in hdr else None
+                        gwtimestamp = hdr.get('gatewayTimestamp')
+                        software = hdr.get('softwareName')
                     except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
                         sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
                         msg = {
@@ -3291,13 +3471,14 @@ def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejecto
 
                 sys.stderr.write('  {0}\n'.format(linecount))
                 sys.stderr.flush()
-                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, 0, routesystemcount)
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, 0, routesystemcount, 0)
 
 def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None 
         or (reprocess == True 
             and (fileinfo.linecount != fileinfo.stnlinecount
-                 or fileinfo.linecount != fileinfo.infolinecount))):
+                 or fileinfo.linecount != fileinfo.infolinecount
+                 or fileinfo.marketitemcount != fileinfo.marketitemlinecount))):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
@@ -3307,73 +3488,112 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
             with bz2.BZ2File(fn, 'r') as f:
                 stnlines = sysdb.getstationfilelines(fileinfo.id)
                 infolines = sysdb.getinfofilelines(fileinfo.id)
+                mktlines = sysdb.getmarketitemfilelines(fileinfo.id)
                 linecount = 0
                 totalsize = 0
+                mktitemcount = 0
                 stntoinsert = []
+                mktitemtoinsert = []
                 infotoinsert = []
+                nullitem = EDDNMarketItem(0, None, None)
                 timer.time('load')
                 for lineno, line in enumerate(f):
-                    if (reprocess == True and (lineno + 1) not in stnlines) or (lineno + 1) not in infolines:
-                        timer.time('read')
-                        msg = None
-                        try:
-                            msg = json.loads(line)
-                            body = msg['message']
-                            hdr = msg['header']
-                            sysname = body['systemName']
-                            stationname = body['stationName']
-                            marketid = body['marketId'] if 'marketId' in body else None
-                            timestamp = body['timestamp'] if 'timestamp' in body else None
-                            gwtimestamp = hdr['gatewayTimestamp'] if 'gatewayTimestamp' in hdr else None
-                            software = hdr['softwareName'] if 'softwareName' in hdr else None
-                        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                            print('Error: {0}'.format(sys.exc_info()[1]))
-                            msg = {
-                                'rejectReason': 'Invalid',
-                                'exception': '{0}'.format(sys.exc_info()[1]),
-                                'rawmessage': line.decode('utf-8')
-                            }
-                            rejectout.write(json.dumps(msg) + '\n')
-                            timer.time('error')
-                            pass
-                        else:
-                            if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
-                                marketid = None
-                            sqltimestamp = timestamptosql(timestamp)
-                            sqlgwtimestamp = timestamptosql(gwtimestamp)
-                            timer.time('parse')
-                            if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
-                                if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
+                    timer.time('read')
+                    msg = None
+                    try:
+                        msg = json.loads(line)
+                        body = msg['message']
+                        hdr = msg['header']
+                        sysname = body['systemName']
+                        stationname = body['stationName']
+                        marketid = body.get('marketId')
+                        timestamp = body.get('timestamp')
+                        gwtimestamp = hdr.get('gatewayTimestamp')
+                        software = hdr.get('softwareName')
+                        commodities = body.get('commodities')
+                        prohibited = body.get('prohibited')
+                        modules = body.get('modules')
+                        ships = body.get('ships')
+                    except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                        print('Error: {0}'.format(sys.exc_info()[1]))
+                        msg = {
+                            'rejectReason': 'Invalid',
+                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'rawmessage': line.decode('utf-8')
+                        }
+                        rejectout.write(json.dumps(msg) + '\n')
+                        timer.time('error')
+                        pass
+                    else:
+                        if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
+                            marketid = None
+                        sqltimestamp = timestamptosql(timestamp)
+                        sqlgwtimestamp = timestamptosql(gwtimestamp)
+                        timer.time('parse')
 
-                                    (station, rejectReason, rejectData) = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp, test = fileinfo.test)
-                                    timer.time('stnquery')
+                        mktitems = [(0, nullitem)]
 
-                                    if station is not None:
-                                        if (lineno + 1) not in stnlines:
-                                            stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                                            
-                                        if (lineno + 1) not in infolines:
-                                            sysdb.insertsoftware(software)
-                                            infotoinsert += [(
-                                                fileinfo.id,
-                                                lineno + 1,
-                                                sqltimestamp,
-                                                sqlgwtimestamp,
-                                                sysdb.software[software],
-                                                station.systemid,
-                                                None,
-                                                len(line),
-                                                None,
-                                                0,
-                                                0,
-                                                1 if 'marketId' in body else 0
-                                            )]
+                        if commodities is not None:
+                            for n, commodity in enumerate(commodities):
+                                marketitem = sysdb.getmarketitem(timer, commodity.get('name'), 'Commodity')
+                                mktitems += [(n + 1, marketitem)]
+                        elif modules is not None:
+                            for n, item in enumerate(modules):
+                                marketitem = sysdb.getmarketitem(timer, item, 'Module')
+                                mktitems += [(n + 1, marketitem)]
+                        elif ships is not None:
+                            for n, item in enumerate(ships):
+                                marketitem = sysdb.getmarketitem(timer, item, 'Ship')
+                                mktitems += [(n + 1, marketitem)]
 
-                                    else:
-                                        msg['rejectReason'] = rejectReason
-                                        msg['rejectData'] = rejectData
-                                        rejectout.write(json.dumps(msg) + '\n')
-                                        pass
+                        if prohibited is not None:
+                            for n, item in enumerate(prohibited):
+                                marketitem = sysdb.getmarketitem(timer, item, 'Commodity')
+                                mktitems += [(-1 - n, marketitem)]
+
+                        if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
+                            if (lineno + 1, 0) not in mktlines:
+                                (mktstation, rejectReason, rejectData) = sysdb.getmarketstation(timer, stationname, sysname, marketid, sqltimestamp)
+
+                                if mktstation is not None:
+                                    for n, marketitem in mktitems:
+                                        if (lineno + 1, n) not in mktlines:
+                                            mktitemtoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketitem)]
+
+                            if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
+
+                                (station, rejectReason, rejectData) = sysdb.getstation(timer, stationname, sysname, marketid, sqltimestamp, test = fileinfo.test)
+                                timer.time('stnquery')
+
+                                if station is not None:
+                                    if (lineno + 1) not in stnlines:
+                                        stntoinsert += [(fileinfo.id, lineno + 1, station)]
+
+                                    if (lineno + 1) not in infolines:
+                                        sysdb.insertsoftware(software)
+                                        infotoinsert += [(
+                                            fileinfo.id,
+                                            lineno + 1,
+                                            sqltimestamp,
+                                            sqlgwtimestamp,
+                                            sysdb.software[software],
+                                            station.systemid,
+                                            None,
+                                            len(line),
+                                            None,
+                                            0,
+                                            0,
+                                            1 if 'marketId' in body else 0
+                                        )]
+
+                                else:
+                                    msg['rejectReason'] = rejectReason
+                                    msg['rejectData'] = rejectData
+                                    rejectout.write(json.dumps(msg) + '\n')
+                                    pass
+
+                        mktitemcount += len(mktitems)
+
                     linecount += 1
                     totalsize += len(line)
                     if (linecount % 1000) == 0:
@@ -3386,6 +3606,157 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
                             sysdb.addfilelineinfo(infotoinsert)
                             timer.time('infoinsert', len(infotoinsert))
                             infotoinsert = []
+                        if len(mktitemtoinsert) != 0:
+                            sysdb.addfilelinemarketitems(mktitemtoinsert)
+                            timer.time('mktiteminsert', len(mktitemtoinsert))
+                            mktitemtoinsert = []
+                        sysdb.commit()
+                        sys.stderr.write('.')
+                        sys.stderr.flush()
+
+                        if (linecount % 64000) == 0:
+                            sys.stderr.write('  {0}\n'.format(lineno + 1))
+                            sys.stderr.flush()
+
+                sysdb.commit()
+                if len(stntoinsert) != 0:
+                    sysdb.addfilelinestations(stntoinsert)
+                    timer.time('stninsert', len(stntoinsert))
+                    stntoinsert = []
+                if len(infotoinsert) != 0:
+                    sysdb.addfilelineinfo(infotoinsert)
+                    timer.time('infoinsert', len(infotoinsert))
+                    infotoinsert = []
+                if len(mktitemtoinsert) != 0:
+                    sysdb.addfilelinemarketitems(mktitemtoinsert)
+                    timer.time('mktiteminsert', len(mktitemtoinsert))
+                    mktitemtoinsert = []
+                sysdb.commit()
+                sys.stderr.write('\n')
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, linecount, 0, mktitemcount)
+        sysdb.commit()
+        timer.time('commit')
+
+def processeddnfcmaterials(sysdb, timer, filename, fileinfo, reprocess, rejectout):
+    if (fileinfo.linecount is None
+        or (reprocess == True
+            and (fileinfo.linecount != fileinfo.stnlinecount
+                 or fileinfo.linecount != fileinfo.infolinecount
+                 or fileinfo.marketitemcount != fileinfo.marketitemlinecount))):
+        fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
+        if os.path.exists(fn):
+            sys.stderr.write('{0}\n'.format(fn))
+            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], filename.split('-')[0]))
+            statinfo = os.stat(fn)
+            comprsize = statinfo.st_size
+            with bz2.BZ2File(fn, 'r') as f:
+                stnlines = sysdb.getstationfilelines(fileinfo.id)
+                infolines = sysdb.getinfofilelines(fileinfo.id)
+                mktlines = sysdb.getmarketitemfilelines(fileinfo.id)
+                linecount = 0
+                totalsize = 0
+                mktitemcount = 0
+                stntoinsert = []
+                mktitemtoinsert = []
+                infotoinsert = []
+                nullitem = EDDNMarketItem(0, None, None)
+                timer.time('load')
+                for lineno, line in enumerate(f):
+                    timer.time('read')
+                    msg = None
+                    try:
+                        msg = json.loads(line)
+                        body = msg['message']
+                        hdr = msg['header']
+                        stationname = body['CarrierID']
+                        marketid = body.get('MarketID')
+                        timestamp = body.get('timestamp')
+                        gwtimestamp = hdr.get('gatewayTimestamp')
+                        software = hdr.get('softwareName')
+                        fcitems = body.get('Items')
+                    except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                        print('Error: {0}'.format(sys.exc_info()[1]))
+                        msg = {
+                            'rejectReason': 'Invalid',
+                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'rawmessage': line.decode('utf-8')
+                        }
+                        rejectout.write(json.dumps(msg) + '\n')
+                        timer.time('error')
+                        pass
+                    else:
+                        if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
+                            marketid = None
+                        sqltimestamp = timestamptosql(timestamp)
+                        sqlgwtimestamp = timestamptosql(gwtimestamp)
+                        timer.time('parse')
+
+                        mktitems = [(0, nullitem)]
+
+                        if fcitems is not None:
+                            for n, item in fcitems:
+                                marketitem = sysdb.getmarketitem(timer, item.get('name'), 'FCMaterial')
+                                mktitems += [(n + 1, marketitem)]
+
+                        if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
+                            if (lineno + 1, 0) not in mktlines:
+                                (mktstation, rejectReason, rejectData) = sysdb.getmarketstation(timer, stationname, '', marketid, sqltimestamp)
+
+                                if mktstation is not None:
+                                    for n, marketitem in mktitems:
+                                        if (lineno + 1, n) not in mktlines:
+                                            mktitemtoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketitem)]
+
+                            if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
+
+                                (station, rejectReason, rejectData) = sysdb.getstation(timer, stationname, '', marketid, sqltimestamp, test = fileinfo.test)
+                                timer.time('stnquery')
+
+                                if station is not None:
+                                    if (lineno + 1) not in stnlines:
+                                        stntoinsert += [(fileinfo.id, lineno + 1, station)]
+
+                                    if (lineno + 1) not in infolines:
+                                        sysdb.insertsoftware(software)
+                                        infotoinsert += [(
+                                            fileinfo.id,
+                                            lineno + 1,
+                                            sqltimestamp,
+                                            sqlgwtimestamp,
+                                            sysdb.software[software],
+                                            station.systemid,
+                                            None,
+                                            len(line),
+                                            None,
+                                            0,
+                                            0,
+                                            1 if 'marketId' in body else 0
+                                        )]
+
+                                else:
+                                    msg['rejectReason'] = rejectReason
+                                    msg['rejectData'] = rejectData
+                                    rejectout.write(json.dumps(msg) + '\n')
+                                    pass
+
+                        mktitemcount += len(mktitems)
+
+                    linecount += 1
+                    totalsize += len(line)
+                    if (linecount % 1000) == 0:
+                        sysdb.commit()
+                        if len(stntoinsert) != 0:
+                            sysdb.addfilelinestations(stntoinsert)
+                            timer.time('stninsert', len(stntoinsert))
+                            stntoinsert = []
+                        if len(infotoinsert) != 0:
+                            sysdb.addfilelineinfo(infotoinsert)
+                            timer.time('infoinsert', len(infotoinsert))
+                            infotoinsert = []
+                        if len(mktitemtoinsert) != 0:
+                            sysdb.addfilelinemarketitems(mktitemtoinsert)
+                            timer.time('mktiteminsert', len(mktitemtoinsert))
+                            mktitemtoinsert = []
                         sysdb.commit()
                         sys.stderr.write('.')
                         sys.stderr.flush()
@@ -3403,9 +3774,13 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
                     sysdb.addfilelineinfo(infotoinsert)
                     timer.time('infoinsert', len(infotoinsert))
                     infotoinsert = []
+                if len(mktitemtoinsert) != 0:
+                    sysdb.addfilelinemarketitems(mktitemtoinsert)
+                    timer.time('mktiteminsert', len(mktitemtoinsert))
+                    mktitemtoinsert = []
                 sysdb.commit()
                 sys.stderr.write('\n')
-                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, linecount, 0)
+                sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, linecount, 0, mktitemcount)
         sysdb.commit()
         timer.time('commit')
 
@@ -3451,6 +3826,7 @@ def main():
         'factionupdate',
         'factioninsert',
         'routesysteminsert',
+        'mktiteminsert',
         'edsmhttp'
     })
 
@@ -3471,12 +3847,16 @@ def main():
             sys.stderr.flush()
             if not args.nojournal:
                 for filename, fileinfo in files.items():
-                    if fileinfo.eventtype is not None and fileinfo.eventtype != 'NavRoute':
+                    if fileinfo.eventtype is not None and fileinfo.eventtype not in ('NavRoute', 'FCMaterials'):
                         processeddnjournalfile(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
             if args.navroute:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype == 'NavRoute':
                         processeddnjournalroute(sysdb, timer, filename, fileinfo, args.reprocess, rf)
+            if args.fcmaterials:
+                for filename, fileinfo in files.items():
+                    if fileinfo.eventtype is not None and fileinfo.eventtype == "FCMaterials":
+                        processeddnfcmaterials(sysdb, timer, filename, fileinfo, args.reprocess, rf)
             if args.market:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is None:
