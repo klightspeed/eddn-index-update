@@ -2162,7 +2162,7 @@ class EDDNSysDB(object):
 
     def getmarketitemfilelines(self, fileid):
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, EntryNum, MarketStationId, MarketItemId FROM FileLineMarketLines WHERE FileId = %s', (fileid,))
+        cursor.execute('SELECT LineNo, EntryNum, MarketStationId, MarketItemId FROM FileLineMarketItems WHERE FileId = %s', (fileid,))
 
         lines = {}
         for row in cursor:
@@ -3326,7 +3326,8 @@ def processeddnjournalfile(sysdb, timer, filename, fileinfo, reprocess, reproces
 def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     #if fileinfo.eventtype in ('Location'):
     #    continue
-    if (fileinfo.linecount is None 
+    if (fileinfo.linecount is None
+        or fileinfo.routesystemcount is None
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
         or (reprocess == True and fileinfo.routesystemcount != fileinfo.navroutesystemcount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
@@ -3474,7 +3475,8 @@ def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejecto
                 sysdb.updatefileinfo(fileinfo.id, linecount, totalsize, comprsize, 0, 0, routesystemcount, 0)
 
 def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout):
-    if (fileinfo.linecount is None 
+    if (fileinfo.linecount is None
+        or fileinfo.marketitemlinecount is None
         or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
         or (reprocess == True and fileinfo.marketitemcount != fileinfo.marketitemlinecount)):
@@ -3638,6 +3640,7 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
 
 def processeddnfcmaterials(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None
+        or fileinfo.marketitemlinecount is None
         or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
         or (reprocess == True and fileinfo.marketitemcount != fileinfo.marketitemlinecount)):
