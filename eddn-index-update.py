@@ -262,7 +262,7 @@ class EDDNSysDB(object):
             self.loadsoftware(conn, timer)
             self.loadbodydesigs(conn, timer)
             self.loadfactions(conn, timer)
-            self.loadmarketitems(conn)
+            self.loadmarketitems(conn, timer)
             self.loadknownbodies(timer)
 
             if loadedsmsys or loadedsmbodies:
@@ -3475,10 +3475,9 @@ def processeddnjournalroute(sysdb, timer, filename, fileinfo, reprocess, rejecto
 
 def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None 
-        or (reprocess == True 
-            and (fileinfo.linecount != fileinfo.stnlinecount
-                 or fileinfo.linecount != fileinfo.infolinecount
-                 or fileinfo.marketitemcount != fileinfo.marketitemlinecount))):
+        or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)
+        or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
+        or (reprocess == True and fileinfo.marketitemcount != fileinfo.marketitemlinecount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
@@ -3639,10 +3638,9 @@ def processeddnmarketfile(sysdb, timer, filename, fileinfo, reprocess, rejectout
 
 def processeddnfcmaterials(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None
-        or (reprocess == True
-            and (fileinfo.linecount != fileinfo.stnlinecount
-                 or fileinfo.linecount != fileinfo.infolinecount
-                 or fileinfo.marketitemcount != fileinfo.marketitemlinecount))):
+        or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)
+        or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
+        or (reprocess == True and fileinfo.marketitemcount != fileinfo.marketitemlinecount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
