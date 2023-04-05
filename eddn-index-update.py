@@ -1824,6 +1824,14 @@ class EDDNSysDB(object):
 
         return station
 
+    def updatemarketstation(self, station, **kwargs):
+        station = station._replace(**kwargs)
+
+        c = self.conn.cursor()
+        c.execute('UPDATE MarketStations SET MarketId = %s WHERE Id = %s', (station.marketid, station.id))
+
+        return station
+
     def getsystembyid(self, sysid):
         c = self.conn.cursor()
         c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE Id = %s', (sysid,))
