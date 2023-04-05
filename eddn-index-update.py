@@ -1241,7 +1241,7 @@ class EDDNSysDB(object):
              (marketid, name,        sysname,    sysid,    stationtype, stationtype_location, bodyname, bodyid, validfrom, validuntil, test))
         return (EDDNStation(c.lastrowid, marketid, name, sysname, sysid, stationtype, stationtype_location or stationtype, bodyname, bodyid, False, validfrom, validuntil, test), None, None)
 
-    def getmarketstation(self, name, sysname, marketid, timestamp):
+    def getmarketstation(self, timer, name, sysname, marketid, timestamp):
         if name is None or name == '':
             return (None, 'No station name')
 
