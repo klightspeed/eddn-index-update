@@ -1341,7 +1341,7 @@ class EDDNSysDB(object):
             '(MarketId, StationName, SystemName, ValidFrom, ValidUntil) VALUES ' +
             '(%s,       %s,          %s,         %s,        %s)',
              (marketid, name,        sysname,    validfrom, validuntil))
-        return (EDDNStation(c.lastrowid, marketid, name, sysname, False, validfrom, validuntil), None, None)
+        return (EDDNMarketStation(c.lastrowid, marketid, name, sysname, False, validfrom, validuntil), None, None)
 
     def insertbodyparents(self, timer, scanbodyid, system, bodyid, parents):
         if parents is not None and bodyid is not None:
