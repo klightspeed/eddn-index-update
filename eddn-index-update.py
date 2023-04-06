@@ -559,14 +559,42 @@ class EDDNSysDB(object):
     def load_market_item_sets(self, conn, timer):
         sys.stderr.write('Loading Market Item Sets\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, Type, ItemSetJson FROM MarketItemSet')
+        c.execute(
+            'SELECT ms.Id, ms.Type, mi.Name ' +
+            'FROM MarketItemSet ms ' +
+            'JOIN MarketItemSet_Item msi ON msi.MarketItemSetId = ms.Id ' +
+            'JOIN MarketItems mi ON mi.Id = msi.MarketItemId ' +
+            'ORDER BY msi.MarketItemSetId, msi.EntryNum'
+        )
         timer.time('sql')
-        rows = c.fetchall()
-        timer.time('sql_market_item_sets')
 
-        for row in rows:
-            itemset = tuple(json.loads(row[2]))
-            self.marketitemsets[(row[1], itemset)] = EDDNMarketItemSet(row[0], row[1], itemset)
+        current_item = None
+        current_itemset = None
+
+        while True:
+            rows = c.fetchmany(10000)
+            timer.time('sql_market_item_sets')
+
+            if len(rows) == 0:
+                break
+
+            for row in rows:
+                if current_item is None:
+                    current_itemset = []
+                    current_item = EDDNMarketItemSet(row[0], row[1], None)
+                elif row[0] != current_item.id:
+                    current_item = current_item._replace(items=tuple(current_itemset))
+                    self.marketitemsets[(current_item.type, current_item.items)] = current_item
+                    current_itemset = []
+                    current_item = EDDNMarketItemSet(row[0], row[1], None)
+
+                current_itemset.append(sys.intern(row[2]))
+
+            timer.time('load_market_item_sets')
+
+        if current_item is not None:
+            current_item = current_item._replace(items=tuple(current_itemset))
+            self.marketitemsets[(current_item.type, current_item.items)] = current_item
 
         timer.time('load_market_item_sets')
 
@@ -1847,7 +1875,7 @@ class EDDNSysDB(object):
         return name
 
     def get_market_item_set(self, timer, type, items):
-        items = sorted([self.fix_item_name(n) for n in items])
+        items = sorted([sys.intern(self.fix_item_name(n)) for n in items])
         itemset = self.marketitemsets.get((type, tuple(items)))
 
         if itemset is not None:
@@ -1856,9 +1884,9 @@ class EDDNSysDB(object):
         c = self.conn.cursor()
         c.execute(
             'INSERT INTO MarketItemSet ' +
-            '(Type, ItemSetJson) VALUES ' +
-            '(%s, %s)',
-            (type, json.dumps(items))
+            '(Type) VALUES ' +
+            '(%s)',
+            (type,)
         )
 
         setid = c.lastrowid
