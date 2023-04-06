@@ -3704,7 +3704,7 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                     timer.time('infoinsert', len(infotoinsert))
                     infotoinsert = []
                 if len(mktsettoinsert) != 0:
-                    sysdb.add_file_line_market_items(mktsettoinsert)
+                    sysdb.add_file_line_market_sets(mktsettoinsert)
                     timer.time('mktsetinsert', len(mktsettoinsert))
                     mktsettoinsert = []
                 sysdb.commit()
@@ -3830,7 +3830,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                             timer.time('infoinsert', len(infotoinsert))
                             infotoinsert = []
                         if len(mktsettoinsert) != 0:
-                            sysdb.add_file_line_market_items(mktsettoinsert)
+                            sysdb.add_file_line_market_sets(mktsettoinsert)
                             timer.time('mktsetinsert', len(mktsettoinsert))
                             mktsettoinsert = []
                         sysdb.commit()
@@ -3851,7 +3851,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                     timer.time('infoinsert', len(infotoinsert))
                     infotoinsert = []
                 if len(mktsettoinsert) != 0:
-                    sysdb.add_file_line_market_items(mktsettoinsert)
+                    sysdb.add_file_line_market_sets(mktsettoinsert)
                     timer.time('mktsetinsert', len(mktsettoinsert))
                     mktsettoinsert = []
                 sysdb.commit()
