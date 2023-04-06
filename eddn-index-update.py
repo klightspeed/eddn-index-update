@@ -222,6 +222,7 @@ class EDDNSysDB(object):
         self.bodydesigs = {}
         self.software = {}
         self.factions = {}
+        self.marketitems = {}
         self.marketitemsets = {}
         self.knownbodies = {}
         self.edsmsysids = None
@@ -241,6 +242,7 @@ class EDDNSysDB(object):
                 'sql_software',
                 'sql_body_desigs',
                 'sql_factions',
+                'sql_market_items',
                 'sql_market_item_sets',
                 'load',
                 'load_name',
@@ -253,6 +255,7 @@ class EDDNSysDB(object):
                 'load_software',
                 'load_body_desigs',
                 'load_factions',
+                'load_market_items',
                 'load_market_item_sets',
                 'load_known_bodies'
             })
@@ -263,6 +266,7 @@ class EDDNSysDB(object):
             self.load_software(conn, timer)
             self.load_body_desigs(conn, timer)
             self.load_factions(conn, timer)
+            self.load_market_items(conn, timer)
             self.load_market_item_sets(conn, timer)
             self.load_known_bodies(timer)
 
@@ -538,6 +542,19 @@ class EDDNSysDB(object):
                 self.factions[fi.name] += [fi]
 
         timer.time('load_factions')
+
+    def load_market_items(self, conn, timer):
+        sys.stderr.write('Loading Market Items\n')
+        c = mysql.makestreamingcursor(conn)
+        c.execute('SELECT Id, Name, Type FROM MarketItems')
+        timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sql_market_items')
+
+        for row in rows:
+            self.marketitems[(row[1], row[2])] = EDDNMarketItem(row[0], row[1], row[2])
+
+        timer.time('load_market_items')
 
     def load_market_item_sets(self, conn, timer):
         sys.stderr.write('Loading Market Item Sets\n')
@@ -1798,7 +1815,39 @@ class EDDNSysDB(object):
 
         return faction
 
+    def get_market_item(self, timer, name, type):
+        item = self.marketitems.get((type, name))
+
+        if item is not None:
+            return item
+
+        c = self.conn.cursor()
+        c.execute(
+            'INSERT INTO MarketItems ' +
+            '(Name, Type) VALUES ' +
+            '(%s, %s)',
+            (name, type)
+        )
+        itemid = c.lastrowid
+
+        item = EDDNMarketItem(itemid, name, type)
+        self.marketitems[(type, name)] = item
+
+        return item
+
+    def fix_item_name(self, name):
+        if name is None:
+            return None
+
+        name = name.lower()
+
+        if name[0] == '$' and name[-6:] == "_name;":
+            name = name[1:-6]
+
+        return name
+
     def get_market_item_set(self, timer, type, items):
+        items = sorted([self.fix_item_name(n) for n in items])
         itemset = self.marketitemsets.get((type, tuple(items)))
 
         if itemset is not None:
@@ -1816,13 +1865,14 @@ class EDDNSysDB(object):
 
         setrows = []
 
-        for n, item in enumerate(items):
-            setrows.append((setid, n + 1, item))
+        for n, itemname in enumerate(items):
+            item = self.get_market_item(timer, itemname, type)
+            setrows.append((setid, n + 1, item.id))
 
         c = self.conn.cursor()
         c.executemany(
             'INSERT INTO MarketItemSet_Item ' +
-            '(MarketItemSetId, EntryNum, MarketItem) VALUES ' +
+            '(MarketItemSetId, EntryNum, MarketItemId) VALUES ' +
             '(%s, %s, %s)',
             setrows
         )
