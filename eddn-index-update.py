@@ -1799,7 +1799,6 @@ class EDDNSysDB(object):
         return faction
 
     def get_market_item_set(self, timer, type, items):
-        items = sorted([x.lower() for x in items])
         itemset = self.marketitemsets.get((type, tuple(items)))
 
         if itemset is not None:
