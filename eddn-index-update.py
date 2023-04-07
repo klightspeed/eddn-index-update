@@ -1906,7 +1906,7 @@ class EDDNSysDB(object):
         return items
 
     def get_market_item_set(self, timer, station, type, items):
-        items = sorted(self.group_items([sys.intern(self.fix_item_name(n)) for n in items]))
+        items = sorted(self.group_items(type, [sys.intern(self.fix_item_name(n)) for n in items]))
         itemset = self.marketitemsets.get((type, station.id, tuple(items)))
 
         if itemset is not None:
