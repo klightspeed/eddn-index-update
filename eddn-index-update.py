@@ -1846,8 +1846,8 @@ class EDDNSysDB(object):
 
         return faction
 
-    def get_market_item(self, timer, name, type):
-        item = self.marketitems.get((type, name))
+    def get_market_item(self, timer, name, mkttype, subitems):
+        item = self.marketitems.get((mkttype, name))
 
         if item is not None:
             return item
@@ -1857,12 +1857,34 @@ class EDDNSysDB(object):
             'INSERT INTO MarketItems ' +
             '(Name, Type) VALUES ' +
             '(%s, %s)',
-            (name, type)
+            (name, mkttype)
         )
         itemid = c.lastrowid
 
-        item = EDDNMarketItem(itemid, name, type)
-        self.marketitems[(type, name)] = item
+        item = EDDNMarketItem(itemid, name, mkttype)
+        self.marketitems[(mkttype, name)] = item
+
+        if subitems is not None and type(subitems) is list:
+            grprows = []
+            for n, subitem in enumerate(subitems):
+                grprows.append((itemid, n + 1, mkttype, subitem))
+
+            c = self.conn.cursor()
+            c.executemany(
+                'INSERT INTO MarketItemSubItems ' +
+                '(MarketItemId, EntryNum, Type, SubItemName) VALUES ' +
+                '(%s, %s, %s, %s)',
+                grprows
+            )
+        else:
+            c = self.conn.cursor()
+            c.execute(
+                'INSERT INTO MarketItemSubItems ' +
+                '(MarketItemId, EntryNum, Type, SubItemName) VALUES ' +
+                '(%s, %s, %s, %s)',
+                (itemid, 0, mkttype, name)
+            )
+
 
         return item
 
@@ -1874,11 +1896,13 @@ class EDDNSysDB(object):
 
         return name
 
-    def group_items(self, type, items):
+    def group_items(self, timer, type, items):
         if type == 'Module':
             groups = {}
 
             for item in items:
+                mktitem = item
+
                 if match := item_armour_re.match(item):
                     grpname = match['group'] + '<armour>'
                     grpitem = match['class']
@@ -1893,21 +1917,22 @@ class EDDNSysDB(object):
                     grpitem = None
 
                 groups[grpname] = grp = groups.get(grpname) or []
-                grp.append(grpitem)
+                grp.append((grpitem, mktitem))
 
             items = []
 
             for gn, gi in groups.items():
-                if all(gv is None for gv in gi):
-                    items.append(gn)
+                if all(gv[0] is None for gv in gi):
+                    items.append((gn, None))
                 else:
-                    items.append(gn + '[' + '|'.join(gi) + ']')
+                    items.append((gn + '[' + '|'.join(gv[0] for gv in gi) + ']', [gv[1] for gv in gi]))
 
         return items
 
-    def get_market_item_set(self, timer, station, type, items):
-        items = sorted(self.group_items(type, [sys.intern(self.fix_item_name(n)) for n in items]))
-        itemset = self.marketitemsets.get((type, station.id, tuple(items)))
+    def get_market_item_set(self, timer, station, mkttype, items):
+        itemgroups = self.group_items(timer, mkttype, sorted([sys.intern(self.fix_item_name(n)) for n in items]))
+        items = [item[0] for item in itemgroups]
+        itemset = self.marketitemsets.get((mkttype, station.id, tuple(items)))
 
         if itemset is not None:
             return itemset
@@ -1917,16 +1942,16 @@ class EDDNSysDB(object):
             'INSERT INTO MarketItemSet ' +
             '(MarketStationId, Type) VALUES ' +
             '(%s, %s)',
-            (station.id, type)
+            (station.id, mkttype)
         )
 
         setid = c.lastrowid
 
         setrows = []
 
-        for n, itemname in enumerate(items):
-            item = self.get_market_item(timer, itemname, type)
-            setrows.append((setid, n + 1, item.id))
+        for n, item in enumerate(itemgroups):
+            mktitem = self.get_market_item(timer, item[0], mkttype, item[1])
+            setrows.append((setid, n + 1, mktitem.id))
 
         c = self.conn.cursor()
         c.executemany(
@@ -1936,9 +1961,9 @@ class EDDNSysDB(object):
             setrows
         )
 
-        itemset = EDDNMarketItemSet(setid, station.id, type, items)
+        itemset = EDDNMarketItemSet(setid, station.id, mkttype, items)
 
-        self.marketitemsets[(type, station.id, tuple(items))] = itemset
+        self.marketitemsets[(mkttype, station.id, tuple(items))] = itemset
 
         return itemset
 
