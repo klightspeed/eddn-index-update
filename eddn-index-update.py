@@ -1898,7 +1898,7 @@ class EDDNSysDB(object):
             items = []
 
             for gn, gi in groups.items():
-                if gi is None:
+                if all(gv is None for gv in gi):
                     items.append(gn)
                 else:
                     items.append(gn + '[' + '|'.join(gi) + ']')
