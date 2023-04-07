@@ -1927,7 +1927,9 @@ class EDDNSysDB(object):
                 else:
                     items.append((gn + '[' + '|'.join(gv[0] for gv in gi) + ']', [gv[1] for gv in gi]))
 
-        return items
+            return items
+        else:
+            return [(item, None) for item in items]
 
     def get_market_item_set(self, timer, station, mkttype, items):
         itemgroups = self.group_items(timer, mkttype, sorted([sys.intern(self.fix_item_name(n)) for n in items]))
