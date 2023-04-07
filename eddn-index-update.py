@@ -110,6 +110,9 @@ pgsysbodyre = re.compile(
       $
    ''', re.VERBOSE)
 
+item_armour_re = re.compile('^(?P<group>.*?_armour)_(?P<class>.*)$')
+item_weapon_re = re.compile('^(?P<group>.*?)_(?P<fgt>fixed|gimbal|turret)_(?P<smlh>small|medium|large|huge)(?P<extra>(?:_.*)?)$')
+item_sizeclass_re = re.compile('^(?P<group>.*?)_size(?P<size>[0-9])_class(?P<class>[0-9])(?P<extra>(?:_.*)?)$')
 
 timestampre = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-5][0-9])')
 carriernamere = re.compile('^[A-Z0-9]{3}-[A-Z0-9]{3}$')
@@ -132,7 +135,7 @@ EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'body
 EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
 EDDNMarketStation = namedtuple('EDDNMarketStation', ['id', 'marketid', 'name', 'systemname', 'isrejected', 'validfrom', 'validuntil'])
 EDDNMarketItem = namedtuple('EDDNMarketItem', ['id', 'name', 'type'])
-EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', ['id', 'type', 'items'])
+EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', ['id', 'marketstationid', 'type', 'items'])
 EDSMFile = namedtuple('EDSMFile', ['id', 'name', 'date', 'linecount', 'bodylinecount', 'comprsize'])
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
@@ -560,7 +563,7 @@ class EDDNSysDB(object):
         sys.stderr.write('Loading Market Item Sets\n')
         c = mysql.makestreamingcursor(conn)
         c.execute(
-            'SELECT ms.Id, ms.Type, mi.Name ' +
+            'SELECT ms.Id, ms.MarketStationId, ms.Type, mi.Name ' +
             'FROM MarketItemSet ms ' +
             'JOIN MarketItemSet_Item msi ON msi.MarketItemSetId = ms.Id ' +
             'JOIN MarketItems mi ON mi.Id = msi.MarketItemId ' +
@@ -1869,14 +1872,42 @@ class EDDNSysDB(object):
 
         name = name.lower()
 
-        if name[0] == '$' and name[-6:] == "_name;":
-            name = name[1:-6]
-
         return name
 
-    def get_market_item_set(self, timer, type, items):
-        items = sorted([sys.intern(self.fix_item_name(n)) for n in items])
-        itemset = self.marketitemsets.get((type, tuple(items)))
+    def group_items(self, type, items):
+        if type == 'Module':
+            groups = {}
+
+            for item in items:
+                if match := item_armour_re.match(item):
+                    grpname = match['group'] + '<armour>'
+                    grpitem = match['class']
+                elif match := item_sizeclass_re.match(item):
+                    grpname = match['group'] + '<size_class>'
+                    grpitem = '@s' + match['size'] + 'c' + match['class'] + match['extra']
+                elif match := item_weapon_re.match(item):
+                    grpname = match['group'] + '<weapon>'
+                    grpitem = '@' + match['fgt'][0] + match['smlh'][0] + match['extra']
+                else:
+                    grpname = item
+                    grpitem = None
+
+                groups[grpname] = grp = groups.get(grpname) or []
+                grp.append(grpitem)
+
+            items = []
+
+            for gn, gi in groups:
+                if gi is None:
+                    items.append(gn)
+                else:
+                    items.append(gn + '[' + '|'.join(gi) + ']')
+
+        return items
+
+    def get_market_item_set(self, timer, station, type, items):
+        items = sorted(self.group_items([sys.intern(self.fix_item_name(n)) for n in items]))
+        itemset = self.marketitemsets.get((type, station.id, tuple(items)))
 
         if itemset is not None:
             return itemset
@@ -1884,9 +1915,9 @@ class EDDNSysDB(object):
         c = self.conn.cursor()
         c.execute(
             'INSERT INTO MarketItemSet ' +
-            '(Type) VALUES ' +
-            '(%s)',
-            (type,)
+            '(MarketStationId, Type) VALUES ' +
+            '(%s, %s)',
+            (station.id, type)
         )
 
         setid = c.lastrowid
@@ -1907,7 +1938,7 @@ class EDDNSysDB(object):
 
         itemset = EDDNMarketItemSet(setid, type, items)
 
-        self.marketitemsets[(type, tuple(items))] = itemset
+        self.marketitemsets[(type, station.id, tuple(items))] = itemset
 
         return itemset
 
@@ -3600,7 +3631,7 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                 stntoinsert = []
                 mktsettoinsert = []
                 infotoinsert = []
-                nullset = EDDNMarketItemSet(0, None, [])
+                nullset = EDDNMarketItemSet(0, 0, None, [])
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     timer.time('read')
@@ -3640,20 +3671,16 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
 
                         if commodities is not None and type(commodities) is list:
                             mktitems = [commodity.get('name') for commodity in commodities]
-                            itemset = sysdb.get_market_item_set(timer, 'Commodity', mktitems)
-                            mktsets.append((1, itemset))
+                            mktsets.append((1, EDDNMarketItemSet(-1, -1, 'Commodity', mktitems)))
 
                         if modules is not None and type(modules) is list:
-                            itemset = sysdb.get_market_item_set(timer, 'Module', modules)
-                            mktsets.append((2, itemset))
+                            mktsets.append((2, EDDNMarketItemSet(-1, -1, 'Module', modules)))
 
                         if ships is not None and type(ships) is list:
-                            itemset = sysdb.get_market_item_set(timer, 'Ship', ships)
-                            mktsets.append((3, itemset))
+                            mktsets.append((3, EDDNMarketItemSet(-1, -1, 'Ship', ships)))
 
                         if prohibited is not None and type(prohibited) is list:
-                            itemset = sysdb.get_market_item_set(timer, 'Prohibited', prohibited)
-                            mktsets.append((4, itemset))
+                            mktsets.append((4, EDDNMarketItemSet(-1, -1, 'Prohibited', prohibited)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
@@ -3662,6 +3689,8 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                                 if mktstation is not None:
                                     for n, marketset in mktsets:
                                         if (lineno + 1, n) not in mktlines:
+                                            if marketset.id < 0:
+                                                marketset = sysdb.get_market_item_set(timer, mktstation, marketset.type, marketset.items)
                                             mktsettoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketset)]
 
                             if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
