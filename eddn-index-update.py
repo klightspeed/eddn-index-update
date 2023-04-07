@@ -1936,7 +1936,7 @@ class EDDNSysDB(object):
             setrows
         )
 
-        itemset = EDDNMarketItemSet(setid, type, items)
+        itemset = EDDNMarketItemSet(setid, station.id, type, items)
 
         self.marketitemsets[(type, station.id, tuple(items))] = itemset
 
