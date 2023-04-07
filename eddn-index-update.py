@@ -1897,7 +1897,7 @@ class EDDNSysDB(object):
 
             items = []
 
-            for gn, gi in groups:
+            for gn, gi in groups.items():
                 if gi is None:
                     items.append(gn)
                 else:
