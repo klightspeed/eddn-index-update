@@ -24,6 +24,7 @@ import eddnindex.config as config
 import eddnindex.mysqlutils as mysql
 import urllib.request
 import urllib.error
+import hashlib
 from setproctitle import getproctitle, setproctitle
 
 eddndir = config.rootdir + '/EDDN/data'
@@ -135,7 +136,7 @@ EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'body
 EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
 EDDNMarketStation = namedtuple('EDDNMarketStation', ['id', 'marketid', 'name', 'systemname', 'isrejected', 'validfrom', 'validuntil'])
 EDDNMarketItem = namedtuple('EDDNMarketItem', ['id', 'name', 'type'])
-EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', ['id', 'marketstationid', 'type', 'items'])
+EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', ['id', 'marketstationid', 'type', 'itemcount', 'itemshash'])
 EDSMFile = namedtuple('EDSMFile', ['id', 'name', 'date', 'linecount', 'bodylinecount', 'comprsize'])
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
@@ -562,42 +563,13 @@ class EDDNSysDB(object):
     def load_market_item_sets(self, conn, timer):
         sys.stderr.write('Loading Market Item Sets\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute(
-            'SELECT ms.Id, ms.MarketStationId, ms.Type, mi.Name ' +
-            'FROM MarketItemSet ms ' +
-            'JOIN MarketItemSet_Item msi ON msi.MarketItemSetId = ms.Id ' +
-            'JOIN MarketItems mi ON mi.Id = msi.MarketItemId ' +
-            'ORDER BY msi.MarketItemSetId, msi.EntryNum'
-        )
+        c.execute('SELECT Id, MarketStationId, Type, ItemCount, ItemsHash FROM MarketItemSet')
         timer.time('sql')
+        rows = c.fetchall()
+        timer.time('sql_market_item_sets')
 
-        current_item = None
-        current_itemset = None
-
-        while True:
-            rows = c.fetchmany(10000)
-            timer.time('sql_market_item_sets')
-
-            if len(rows) == 0:
-                break
-
-            for row in rows:
-                if current_item is None:
-                    current_itemset = []
-                    current_item = EDDNMarketItemSet(row[0], row[1], row[2], None)
-                elif row[0] != current_item.id:
-                    current_item = current_item._replace(items=tuple(current_itemset))
-                    self.marketitemsets[(current_item.type, current_item.marketstationid, current_item.items)] = current_item
-                    current_itemset = []
-                    current_item = EDDNMarketItemSet(row[0], row[1], row[2], None)
-
-                current_itemset.append(sys.intern(row[3]))
-
-            timer.time('load_market_item_sets')
-
-        if current_item is not None:
-            current_item = current_item._replace(items=tuple(current_itemset))
-            self.marketitemsets[(current_item.type, current_item.marketstationid, current_item.items)] = current_item
+        for row in rows:
+            self.marketitemsets[(row[1], row[2], row[3], row[4])] = EDDNMarketItemSet(row[0], row[1], row[2], row[3], row[4])
 
         timer.time('load_market_item_sets')
 
@@ -1846,7 +1818,7 @@ class EDDNSysDB(object):
 
         return faction
 
-    def get_market_item(self, timer, name, mkttype, subitems):
+    def get_market_item(self, timer, name, mkttype):
         item = self.marketitems.get((mkttype, name))
 
         if item is not None:
@@ -1864,28 +1836,6 @@ class EDDNSysDB(object):
         item = EDDNMarketItem(itemid, name, mkttype)
         self.marketitems[(mkttype, name)] = item
 
-        if subitems is not None and type(subitems) is list:
-            grprows = []
-            for n, subitem in enumerate(subitems):
-                grprows.append((itemid, n + 1, mkttype, subitem))
-
-            c = self.conn.cursor()
-            c.executemany(
-                'INSERT INTO MarketItemSubItems ' +
-                '(MarketItemId, EntryNum, Type, SubItemName) VALUES ' +
-                '(%s, %s, %s, %s)',
-                grprows
-            )
-        else:
-            c = self.conn.cursor()
-            c.execute(
-                'INSERT INTO MarketItemSubItems ' +
-                '(MarketItemId, EntryNum, Type, SubItemName) VALUES ' +
-                '(%s, %s, %s, %s)',
-                (itemid, 0, mkttype, name)
-            )
-
-
         return item
 
     def fix_item_name(self, name):
@@ -1896,45 +1846,10 @@ class EDDNSysDB(object):
 
         return name
 
-    def group_items(self, timer, type, items):
-        if type == 'Module':
-            groups = {}
-
-            for item in items:
-                mktitem = item
-
-                if match := item_armour_re.match(item):
-                    grpname = match['group'] + '<armour>'
-                    grpitem = match['class']
-                elif match := item_sizeclass_re.match(item):
-                    grpname = match['group'] + '<size_class>'
-                    grpitem = '@s' + match['size'] + 'c' + match['class'] + match['extra']
-                elif match := item_weapon_re.match(item):
-                    grpname = match['group'] + '<weapon>'
-                    grpitem = '@' + match['fgt'][0] + match['smlh'][0] + match['extra']
-                else:
-                    grpname = item
-                    grpitem = None
-
-                groups[grpname] = grp = groups.get(grpname) or []
-                grp.append((grpitem, mktitem))
-
-            items = []
-
-            for gn, gi in groups.items():
-                if all(gv[0] is None for gv in gi):
-                    items.append((gn, None))
-                else:
-                    items.append((gn + '[' + '|'.join(gv[0] for gv in gi) + ']', [gv[1] for gv in gi]))
-
-            return items
-        else:
-            return [(item, None) for item in items]
-
     def get_market_item_set(self, timer, station, mkttype, items):
-        itemgroups = self.group_items(timer, mkttype, sorted([sys.intern(self.fix_item_name(n)) for n in items]))
-        items = [item[0] for item in itemgroups]
-        itemset = self.marketitemsets.get((mkttype, station.id, tuple(items)))
+        items = sorted([sys.intern(self.fix_item_name(n)) for n in items])
+        items_hash = hashlib.sha256(json.dumps(items).encode('utf-8')).hexdigest()
+        itemset = self.marketitemsets.get((mkttype, station.id, len(items), items_hash))
 
         if itemset is not None:
             return itemset
@@ -1942,17 +1857,17 @@ class EDDNSysDB(object):
         c = self.conn.cursor()
         c.execute(
             'INSERT INTO MarketItemSet ' +
-            '(MarketStationId, Type) VALUES ' +
-            '(%s, %s)',
-            (station.id, mkttype)
+            '(MarketStationId, Type, ItemCount, ItemsHash) VALUES ' +
+            '(%s, %s, %s, %s)',
+            (station.id, mkttype, len(items), items_hash)
         )
 
         setid = c.lastrowid
 
         setrows = []
 
-        for n, item in enumerate(itemgroups):
-            mktitem = self.get_market_item(timer, item[0], mkttype, item[1])
+        for n, item in enumerate(items):
+            mktitem = self.get_market_item(timer, item, mkttype)
             setrows.append((setid, n + 1, mktitem.id))
 
         c = self.conn.cursor()
@@ -1963,9 +1878,9 @@ class EDDNSysDB(object):
             setrows
         )
 
-        itemset = EDDNMarketItemSet(setid, station.id, mkttype, items)
+        itemset = EDDNMarketItemSet(setid, station.id, mkttype, len(items), items_hash)
 
-        self.marketitemsets[(mkttype, station.id, tuple(items))] = itemset
+        self.marketitemsets[(itemset.type, itemset.marketstationid, itemset.itemcount, itemset.itemshash)] = itemset
 
         return itemset
 
