@@ -584,20 +584,20 @@ class EDDNSysDB(object):
             for row in rows:
                 if current_item is None:
                     current_itemset = []
-                    current_item = EDDNMarketItemSet(row[0], row[1], None)
+                    current_item = EDDNMarketItemSet(row[0], row[1], row[2], None)
                 elif row[0] != current_item.id:
                     current_item = current_item._replace(items=tuple(current_itemset))
-                    self.marketitemsets[(current_item.type, current_item.items)] = current_item
+                    self.marketitemsets[(current_item.type, current_item.marketstationid, current_item.items)] = current_item
                     current_itemset = []
-                    current_item = EDDNMarketItemSet(row[0], row[1], None)
+                    current_item = EDDNMarketItemSet(row[0], row[1], row[2], None)
 
-                current_itemset.append(sys.intern(row[2]))
+                current_itemset.append(sys.intern(row[3]))
 
             timer.time('load_market_item_sets')
 
         if current_item is not None:
             current_item = current_item._replace(items=tuple(current_itemset))
-            self.marketitemsets[(current_item.type, current_item.items)] = current_item
+            self.marketitemsets[(current_item.type, current_item.marketstationid, current_item.items)] = current_item
 
         timer.time('load_market_item_sets')
 
