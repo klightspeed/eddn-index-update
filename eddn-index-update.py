@@ -746,6 +746,49 @@ class EDDNSysDB(object):
 
         return systems
 
+    def find_stations(self, name, sysname, marketid, timestamp):
+        if carriernamere.match(name):
+            sysname = ''
+
+        c = self.conn.cursor()
+        c.execute('SELECT Id, MarketId, StationName, SystemName, SystemId, StationType, COALESCE(StationType_Location, StationType), Body, BodyID, IsRejected, ValidFrom, ValidUntil, Test FROM Stations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
+        stations = [ EDDNStation(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01', row[10], row[11], row[12] == b'\x01') for row in c ]
+
+        candidates = []
+
+        for station in stations:
+            if marketid is not None:
+                if station.marketid is not None and marketid != station.marketid:
+                    continue
+
+            candidates.append(station)
+
+        if len(candidates) > 1 and marketid is not None:
+            midcandidates = [ c for c in candidates if c[0].marketid is not None ]
+            if len(midcandidates) == 1:
+                candidates = midcandidates
+
+        if len(candidates) > 1:
+            candidates = [ c for c in candidates if not c[0].isrejected and c[0].validfrom <= timestamp and c[0].validuntil > timestamp ]
+
+        if len(candidates) == 2:
+            if candidates[0][0].validfrom > candidates[1][0].validfrom and candidates[0][0].validuntil < candidates[1][0].validuntil:
+                candidates = [ candidates[0] ]
+            elif candidates[1][0].validfrom > candidates[0][0].validfrom and candidates[1][0].validuntil < candidates[0][0].validuntil:
+                candidates = [ candidates[1] ]
+            elif candidates[0][0].validuntil == candidates[1][0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[0][0].validuntil - timedelta(hours = 13):
+                    candidates = [ candidates[0] ]
+                else:
+                    candidates = [ candidates[1] ]
+            elif candidates[1][0].validuntil == candidates[0][0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[1][0].validuntil - timedelta(hours = 13):
+                    candidates = [ candidates[1] ]
+                else:
+                    candidates = [ candidates[0] ]
+
+        return candidates
+
     def get_reject_data(self, sysname, sysaddr, systems):
         id64name = None
         nameid64 = None
@@ -3554,7 +3597,6 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
 def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None
         or fileinfo.marketsetcount is None
-        or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
         or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
@@ -3564,13 +3606,11 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
-                stnlines = sysdb.get_station_file_lines(fileinfo.id)
                 infolines = sysdb.get_info_file_lines(fileinfo.id)
                 mktlines = sysdb.get_market_set_file_lines(fileinfo.id)
                 linecount = 0
                 totalsize = 0
                 mktsetcount = 0
-                stntoinsert = []
                 mktsettoinsert = []
                 infotoinsert = []
                 nullset = EDDNMarketItemSet(0, 0, None, 0, None)
@@ -3634,38 +3674,37 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                                             if type(marketset.itemshash) is list:
                                                 marketset = sysdb.get_market_item_set(timer, mktstation, marketset.type, marketset.itemshash)
                                             mktsettoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketset)]
-
-                            if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
-
-                                (station, rejectReason, rejectData) = sysdb.get_station(timer, stationname, sysname, marketid, sqltimestamp, test = fileinfo.test)
-                                timer.time('stnquery')
-
-                                if station is not None:
-                                    if (lineno + 1) not in stnlines:
-                                        stntoinsert += [(fileinfo.id, lineno + 1, station)]
-
-                                    if (lineno + 1) not in infolines:
-                                        sysdb.insert_software(software)
-                                        infotoinsert += [(
-                                            fileinfo.id,
-                                            lineno + 1,
-                                            sqltimestamp,
-                                            sqlgwtimestamp,
-                                            sysdb.software[software],
-                                            station.systemid,
-                                            None,
-                                            len(line),
-                                            None,
-                                            0,
-                                            0,
-                                            1 if 'marketId' in body else 0
-                                        )]
-
                                 else:
                                     msg['rejectReason'] = rejectReason
                                     msg['rejectData'] = rejectData
                                     rejectout.write(json.dumps(msg) + '\n')
-                                    pass
+
+                            if (lineno + 1) not in infolines:
+                                systemid = None
+                                systems = sysdb.find_systems_by_name(sysname)
+                                stations = sysdb.find_stations(stationname, sysname, marketid, sqltimestamp)
+                                station_sysids = set(stn.systemid for stn in stations if stn.systemid is not None)
+
+                                if len(systems) == 1:
+                                    systemid = systems[0].id
+                                elif len(station_sysids) == 1:
+                                    systemid = station_sysids[0]
+
+                                sysdb.insert_software(software)
+                                infotoinsert += [(
+                                    fileinfo.id,
+                                    lineno + 1,
+                                    sqltimestamp,
+                                    sqlgwtimestamp,
+                                    sysdb.software[software],
+                                    systemid,
+                                    None,
+                                    len(line),
+                                    None,
+                                    0,
+                                    0,
+                                    1 if 'marketId' in body else 0
+                                )]
 
                         mktsetcount += len(mktsets)
 
@@ -3673,10 +3712,6 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                     totalsize += len(line)
                     if (linecount % 1000) == 0:
                         sysdb.commit()
-                        if len(stntoinsert) != 0:
-                            sysdb.add_file_line_stations(stntoinsert)
-                            timer.time('stninsert', len(stntoinsert))
-                            stntoinsert = []
                         if len(infotoinsert) != 0:
                             sysdb.add_file_line_info(infotoinsert)
                             timer.time('infoinsert', len(infotoinsert))
@@ -3694,10 +3729,6 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                             sys.stderr.flush()
 
                 sysdb.commit()
-                if len(stntoinsert) != 0:
-                    sysdb.add_file_line_stations(stntoinsert)
-                    timer.time('stninsert', len(stntoinsert))
-                    stntoinsert = []
                 if len(infotoinsert) != 0:
                     sysdb.add_file_line_info(infotoinsert)
                     timer.time('infoinsert', len(infotoinsert))
@@ -3715,7 +3746,6 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
 def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, rejectout):
     if (fileinfo.linecount is None
         or fileinfo.marketsetcount is None
-        or (reprocess == True and fileinfo.linecount != fileinfo.stnlinecount)
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
         or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
@@ -3725,13 +3755,11 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
-                stnlines = sysdb.get_station_file_lines(fileinfo.id)
                 infolines = sysdb.get_info_file_lines(fileinfo.id)
                 mktlines = sysdb.get_market_set_file_lines(fileinfo.id)
                 linecount = 0
                 totalsize = 0
                 mktsetcount = 0
-                stntoinsert = []
                 mktsettoinsert = []
                 infotoinsert = []
                 nullset = EDDNMarketItemSet(0, 0, None, 0, None)
@@ -3782,38 +3810,27 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                                             if type(marketset.itemshash) is list:
                                                 marketset = sysdb.get_market_item_set(timer, mktstation, marketset.type, marketset.itemshash)
                                             mktsettoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketset)]
-
-                            if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
-
-                                (station, rejectReason, rejectData) = sysdb.get_station(timer, stationname, '', marketid, sqltimestamp, test = fileinfo.test)
-                                timer.time('stnquery')
-
-                                if station is not None:
-                                    if (lineno + 1) not in stnlines:
-                                        stntoinsert += [(fileinfo.id, lineno + 1, station)]
-
-                                    if (lineno + 1) not in infolines:
-                                        sysdb.insert_software(software)
-                                        infotoinsert += [(
-                                            fileinfo.id,
-                                            lineno + 1,
-                                            sqltimestamp,
-                                            sqlgwtimestamp,
-                                            sysdb.software[software],
-                                            station.systemid,
-                                            None,
-                                            len(line),
-                                            None,
-                                            0,
-                                            0,
-                                            1 if 'marketId' in body else 0
-                                        )]
-
                                 else:
                                     msg['rejectReason'] = rejectReason
                                     msg['rejectData'] = rejectData
                                     rejectout.write(json.dumps(msg) + '\n')
-                                    pass
+
+                            if (lineno + 1) not in infolines:
+                                sysdb.insert_software(software)
+                                infotoinsert += [(
+                                    fileinfo.id,
+                                    lineno + 1,
+                                    sqltimestamp,
+                                    sqlgwtimestamp,
+                                    sysdb.software[software],
+                                    None,
+                                    None,
+                                    len(line),
+                                    None,
+                                    0,
+                                    0,
+                                    1 if 'marketId' in body else 0
+                                )]
 
                         mktsetcount += len(mktsets)
 
@@ -3821,10 +3838,6 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                     totalsize += len(line)
                     if (linecount % 1000) == 0:
                         sysdb.commit()
-                        if len(stntoinsert) != 0:
-                            sysdb.add_file_line_stations(stntoinsert)
-                            timer.time('stninsert', len(stntoinsert))
-                            stntoinsert = []
                         if len(infotoinsert) != 0:
                             sysdb.add_file_line_info(infotoinsert)
                             timer.time('infoinsert', len(infotoinsert))
@@ -3842,10 +3855,6 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                             sys.stderr.flush()
                 
                 sysdb.commit()
-                if len(stntoinsert) != 0:
-                    sysdb.add_file_line_stations(stntoinsert)
-                    timer.time('stninsert', len(stntoinsert))
-                    stntoinsert = []
                 if len(infotoinsert) != 0:
                     sysdb.add_file_line_info(infotoinsert)
                     timer.time('infoinsert', len(infotoinsert))
