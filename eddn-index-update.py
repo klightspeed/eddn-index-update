@@ -3573,7 +3573,7 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                 stntoinsert = []
                 mktsettoinsert = []
                 infotoinsert = []
-                nullset = EDDNMarketItemSet(0, 0, None, [])
+                nullset = EDDNMarketItemSet(0, 0, None, 0, None)
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     timer.time('read')
@@ -3613,16 +3613,16 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
 
                         if commodities is not None and type(commodities) is list:
                             mktitems = [commodity.get('name') for commodity in commodities]
-                            mktsets.append((1, EDDNMarketItemSet(-1, -1, 'Commodity', mktitems)))
+                            mktsets.append((1, EDDNMarketItemSet(-1, -1, 'Commodity', None, mktitems)))
 
                         if modules is not None and type(modules) is list:
-                            mktsets.append((2, EDDNMarketItemSet(-1, -1, 'Module', modules)))
+                            mktsets.append((2, EDDNMarketItemSet(-1, -1, 'Module', None, modules)))
 
                         if ships is not None and type(ships) is list:
-                            mktsets.append((3, EDDNMarketItemSet(-1, -1, 'Ship', ships)))
+                            mktsets.append((3, EDDNMarketItemSet(-1, -1, 'Ship', None, ships)))
 
                         if prohibited is not None and type(prohibited) is list:
-                            mktsets.append((4, EDDNMarketItemSet(-1, -1, 'Prohibited', prohibited)))
+                            mktsets.append((4, EDDNMarketItemSet(-1, -1, 'Prohibited', None, prohibited)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
@@ -3631,8 +3631,8 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                                 if mktstation is not None:
                                     for n, marketset in mktsets:
                                         if (lineno + 1, n) not in mktlines:
-                                            if marketset.id < 0:
-                                                marketset = sysdb.get_market_item_set(timer, mktstation, marketset.type, marketset.items)
+                                            if type(marketset.itemshash) is list:
+                                                marketset = sysdb.get_market_item_set(timer, mktstation, marketset.type, marketset.itemshash)
                                             mktsettoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketset)]
 
                             if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
@@ -3734,7 +3734,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                 stntoinsert = []
                 mktsettoinsert = []
                 infotoinsert = []
-                nullset = EDDNMarketItemSet(0, None, [])
+                nullset = EDDNMarketItemSet(0, 0, None, 0, None)
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     timer.time('read')
@@ -3770,8 +3770,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
 
                         if fcitems is not None:
                             mktitems = [item.get('name') for item in fcitems]
-                            itemset = sysdb.get_market_item_set(timer, 'FCMaterial', mktitems)
-                            mktsets.append((5, itemset))
+                            mktsets.append((5, EDDNMarketItemSet(-1, -1, 'FCMaterials', None, mktitems)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
@@ -3780,6 +3779,8 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                                 if mktstation is not None:
                                     for n, marketset in mktsets:
                                         if (lineno + 1, n) not in mktlines:
+                                            if type(marketset.itemshash) is list:
+                                                marketset = sysdb.get_market_item_set(timer, mktstation, marketset.type, marketset.itemshash)
                                             mktsettoinsert += [(fileinfo.id, lineno + 1, mktstation, n, marketset)]
 
                             if ((lineno + 1) not in stnlines or (lineno + 1) not in infolines):
