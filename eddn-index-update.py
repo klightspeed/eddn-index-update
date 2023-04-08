@@ -556,7 +556,7 @@ class EDDNSysDB(object):
         timer.time('sql_market_items')
 
         for row in rows:
-            self.marketitems[(row[1], row[2])] = EDDNMarketItem(row[0], row[1], row[2])
+            self.marketitems[(row[2], row[1])] = EDDNMarketItem(row[0], row[1], row[2])
 
         timer.time('load_market_items')
 
