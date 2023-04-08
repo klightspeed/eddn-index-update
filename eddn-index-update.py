@@ -112,7 +112,7 @@ pgsysbodyre = re.compile(
    ''', re.VERBOSE)
 
 item_armour_re = re.compile('^(?P<group>.*?_armour)_(?P<class>.*)$')
-item_weapon_re = re.compile('^(?P<group>.*?)_(?P<fgt>fixed|gimbal|turret)_(?P<smlh>small|medium|large|huge)(?P<extra>(?:_.*)?)$')
+item_hardpoint_re = re.compile('^(?P<group>.*?)_(?P<fgt>fixed|gimbal|turret)_(?P<smlh>small|medium|large|huge)(?P<extra>(?:_.*)?)$')
 item_sizeclass_re = re.compile('^(?P<group>.*?)_size(?P<size>[0-9])_class(?P<class>[0-9])(?P<extra>(?:_.*)?)$')
 
 timestampre = re.compile('^([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-5][0-9]:[0-5][0-9])')
@@ -3614,6 +3614,9 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                 mktsettoinsert = []
                 infotoinsert = []
                 nullset = EDDNMarketItemSet(0, 0, None, 0, None)
+                commodityType = sysdb.get_market_item(timer, 'Commodity', 'MarketItemClass').id
+                prohibitedType = sysdb.get_market_item(timer, 'Prohibited', 'MarketItemClass').id
+                shipType = sysdb.get_market_item(timer, 'Ship', 'MarketItemClass').id
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     timer.time('read')
@@ -3653,16 +3656,70 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
 
                         if commodities is not None and type(commodities) is list:
                             mktitems = [commodity.get('name') for commodity in commodities]
-                            mktsets.append((1, EDDNMarketItemSet(-1, -1, 'Commodity', None, mktitems)))
+                            mktsets.append((commodityType, EDDNMarketItemSet(-1, -1, 'Commodity', None, mktitems)))
 
                         if modules is not None and type(modules) is list:
-                            mktsets.append((2, EDDNMarketItemSet(-1, -1, 'Module', None, modules)))
+                            moduleGroups = {
+                                'Module_Armour': [],
+                                'Module_Hardpoint_Fixed': [],
+                                'Module_Hardpoint_Gimbal': [],
+                                'Module_Hardpoint_Turret': [],
+                                'Module_Hardpoint_Other': [],
+                                'Module_DroneControl': [],
+                                'Module_Engine': [],
+                                'Module_FuelScoop': [],
+                                'Module_Guardian': [],
+                                'Module_Hyperdrive': [],
+                                'Module_LifeSupport': [],
+                                'Module_PowerDistributor': [],
+                                'Module_Powerplant': [],
+                                'Module_Refinery': [],
+                                'Module_Reinforcement': [],
+                                'Module_Repairer': [],
+                                'Module_Sensors': [],
+                                'Module_ShieldCellBank': [],
+                                'Module_ShieldGenerator': [],
+                                'Module_Internal_Other': [],
+                                'Module_Other': []
+                            }
+
+                            for module in modules:
+                                groupName = 'Module_Other'
+                                if '_armour_' in module:
+                                    groupName = 'Module_Armour'
+                                elif match := item_hardpoint_re.match(module):
+                                    if match['fgt'] == 'fixed': groupName = 'Module_Hardpoint_Fixed'
+                                    elif match['fgt'] == 'gimbal': groupName = 'Module_Hardpoint_Gimbal'
+                                    elif match['fgt'] == 'turret': groupName = 'Module_Hardpoint_Turret'
+                                elif match := item_sizeclass_re.match(module):
+                                    if match['group'].startswith('int_dronecontrol_'): groupName = 'Module_DroneControl'
+                                    elif match['group'] == 'int_engine': groupName = 'Module_Engine'
+                                    elif match['group'] == 'int_fuelscoop': groupName = 'Module_FuelScoop'
+                                    elif match['group'].startswith('int_guardian'): groupName = 'Module_Guardian'
+                                    elif match['group'] == 'int_hyperdrive': groupName = 'Module_Hyperdrive'
+                                    elif match['group'] == 'int_lifesupport': groupName = 'Module_LifeSupport'
+                                    elif match['group'] == 'int_powerdistributor': groupName = 'Module_PowerDistributor'
+                                    elif match['group'] == 'int_powerplant': groupName = 'Module_Powerplant'
+                                    elif match['group'] == 'int_refinery': groupName = 'Module_Refinery'
+                                    elif match['group'] == 'int_repairer': groupName = 'Module_Repairer'
+                                    elif match['group'] == 'int_sensors': groupName = 'Module_Sensors'
+                                    elif match['group'] == 'int_shieldcellbank': groupName = 'Module_ShieldCellBank'
+                                    elif match['group'] == 'int_shieldgenerator': groupName = 'Module_ShieldGenerator'
+                                    elif match['group'].startswith('hpt_'): groupName = 'Module_Hardpoint_Other'
+                                    elif 'reinforcement' in match['group']: groupName = 'Module_Reinforcement'
+                                    else: groupName = 'Module_Internal_Other'
+
+                                moduleGroups[groupName].append(module)
+
+                            for grpname, grp in moduleGroups:
+                                typeid = sysdb.get_market_item(timer, grpname, 'ModuleClass').id
+                                mktsets.append((typeid, EDDNMarketItemSet(-1, -1, 'Module', None, modules)))
 
                         if ships is not None and type(ships) is list:
-                            mktsets.append((3, EDDNMarketItemSet(-1, -1, 'Ship', None, ships)))
+                            mktsets.append((shipType, EDDNMarketItemSet(-1, -1, 'Ship', None, ships)))
 
                         if prohibited is not None and type(prohibited) is list:
-                            mktsets.append((4, EDDNMarketItemSet(-1, -1, 'Prohibited', None, prohibited)))
+                            mktsets.append((prohibitedType, EDDNMarketItemSet(-1, -1, 'Prohibited', None, prohibited)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
@@ -3763,6 +3820,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                 mktsettoinsert = []
                 infotoinsert = []
                 nullset = EDDNMarketItemSet(0, 0, None, 0, None)
+                fcmatType = sysdb.get_market_item(timer, 'FCMaterials', 'MarketItemClass').id
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     timer.time('read')
@@ -3798,7 +3856,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
 
                         if fcitems is not None:
                             mktitems = [item.get('name') for item in fcitems]
-                            mktsets.append((5, EDDNMarketItemSet(-1, -1, 'FCMaterials', None, mktitems)))
+                            mktsets.append((fcmatType, EDDNMarketItemSet(-1, -1, 'FCMaterials', None, mktitems)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
