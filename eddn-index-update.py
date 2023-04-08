@@ -3711,9 +3711,9 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
 
                                 moduleGroups[groupName].append(module)
 
-                            for grpname, grp in moduleGroups:
+                            for grpname, grp in moduleGroups.items():
                                 typeid = sysdb.get_market_item(timer, grpname, 'ModuleClass').id
-                                mktsets.append((typeid, EDDNMarketItemSet(-1, -1, 'Module', None, modules)))
+                                mktsets.append((typeid, EDDNMarketItemSet(-1, -1, 'Module', None, grp)))
 
                         if ships is not None and type(ships) is list:
                             mktsets.append((shipType, EDDNMarketItemSet(-1, -1, 'Ship', None, ships)))
