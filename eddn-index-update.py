@@ -764,25 +764,25 @@ class EDDNSysDB(object):
             candidates.append(station)
 
         if len(candidates) > 1 and marketid is not None:
-            midcandidates = [ c for c in candidates if c[0].marketid is not None ]
+            midcandidates = [ c for c in candidates if c.marketid is not None ]
             if len(midcandidates) == 1:
                 candidates = midcandidates
 
         if len(candidates) > 1:
-            candidates = [ c for c in candidates if not c[0].isrejected and c[0].validfrom <= timestamp and c[0].validuntil > timestamp ]
+            candidates = [ c for c in candidates if not c.isrejected and c.validfrom <= timestamp and c.validuntil > timestamp ]
 
         if len(candidates) == 2:
-            if candidates[0][0].validfrom > candidates[1][0].validfrom and candidates[0][0].validuntil < candidates[1][0].validuntil:
+            if candidates[0].validfrom > candidates[1].validfrom and candidates[0].validuntil < candidates[1].validuntil:
                 candidates = [ candidates[0] ]
-            elif candidates[1][0].validfrom > candidates[0][0].validfrom and candidates[1][0].validuntil < candidates[0][0].validuntil:
+            elif candidates[1].validfrom > candidates[0].validfrom and candidates[1].validuntil < candidates[0].validuntil:
                 candidates = [ candidates[1] ]
-            elif candidates[0][0].validuntil == candidates[1][0].validfrom + timedelta(hours = 15):
-                if timestamp < candidates[0][0].validuntil - timedelta(hours = 13):
+            elif candidates[0].validuntil == candidates[1].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[0].validuntil - timedelta(hours = 13):
                     candidates = [ candidates[0] ]
                 else:
                     candidates = [ candidates[1] ]
-            elif candidates[1][0].validuntil == candidates[0][0].validfrom + timedelta(hours = 15):
-                if timestamp < candidates[1][0].validuntil - timedelta(hours = 13):
+            elif candidates[1].validuntil == candidates[0].validfrom + timedelta(hours = 15):
+                if timestamp < candidates[1].validuntil - timedelta(hours = 13):
                     candidates = [ candidates[1] ]
                 else:
                     candidates = [ candidates[0] ]
