@@ -3740,7 +3740,7 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                                 systemid = None
                                 systems = sysdb.find_systems_by_name(sysname)
                                 stations = sysdb.find_stations(stationname, sysname, marketid, sqltimestamp)
-                                station_sysids = set(stn.systemid for stn in stations if stn.systemid is not None)
+                                station_sysids = list(set(stn.systemid for stn in stations if stn.systemid is not None))
 
                                 if len(systems) == 1:
                                     systemid = systems[0].id
