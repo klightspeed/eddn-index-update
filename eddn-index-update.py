@@ -3821,6 +3821,8 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                 infotoinsert = []
                 nullset = EDDNMarketItemSet(0, 0, None, 0, None)
                 fcmatType = sysdb.get_market_item(timer, 'FCMaterials', 'MarketItemClass').id
+                fcmatPurchasesType = sysdb.get_market_item(timer, 'FCMaterials_Purchases', 'MarketItemClass').id
+                fcmatSalesType = sysdb.get_market_item(timer, 'FCMaterials_Sales', 'MarketItemClass').id
                 timer.time('load')
                 for lineno, line in enumerate(f):
                     timer.time('read')
@@ -3855,8 +3857,14 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                         mktsets = [(0, nullset)]
 
                         if fcitems is not None:
-                            mktitems = [item.get('name') for item in fcitems]
-                            mktsets.append((fcmatType, EDDNMarketItemSet(-1, -1, 'FCMaterials', None, mktitems)))
+                            if type(fcitems) is list:
+                                mktitems = [item.get('name') for item in fcitems]
+                                mktsets.append((fcmatType, EDDNMarketItemSet(-1, -1, 'FCMaterials', None, mktitems)))
+                            elif type(fcitems) is dict and 'purchases' in fcitems and 'sales' in fcitems:
+                                purchases = [item.get('name') for item in fcitems['purchases']]
+                                sales = [item.get('name') for item in fcitems['sales']]
+                                mktsets.append((fcmatPurchasesType, EDDNMarketItemSet(-1, -1, 'FCMaterials_Purchases', None, purchases)))
+                                mktsets.append((fcmatSalesType, EDDNMarketItemSet(-1, -1, 'FCMaterials_Sales', None, sales)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
