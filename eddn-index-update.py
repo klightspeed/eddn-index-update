@@ -3883,10 +3883,28 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                                 mktitems = [item.get('name') for item in fcitems]
                                 mktsets.append((fcmatType, EDDNMarketItemSet(-1, -1, 'FCMaterials', None, mktitems)))
                             elif type(fcitems) is dict and 'purchases' in fcitems and 'sales' in fcitems:
-                                purchases = [item.get('name') for item in fcitems['purchases']]
-                                sales = [item.get('name') for item in fcitems['sales']]
-                                mktsets.append((fcmatPurchasesType, EDDNMarketItemSet(-1, -1, 'FCMaterials_Purchases', None, purchases)))
-                                mktsets.append((fcmatSalesType, EDDNMarketItemSet(-1, -1, 'FCMaterials_Sales', None, sales)))
+                                purchases = fcitems['purchases']
+                                sales = fcitems['sales']
+
+                                if type(purchases) is list:
+                                    purchases = [item.get('name') for item in purchases]
+                                elif type(purchases) is dict:
+                                    purchases = [item.get('name') for _, item in purchases.items()]
+                                else:
+                                    purchases = None
+
+                                if type(sales) is list:
+                                    sales = [item.get('name') for item in sales]
+                                elif type(sales) is dict:
+                                    sales = [item.get('name') for _, item in sales.items()]
+                                else:
+                                    sales = None
+
+                                if purchases is not None:
+                                    mktsets.append((fcmatPurchasesType, EDDNMarketItemSet(-1, -1, 'FCMaterials_Purchases', None, purchases)))
+
+                                if sales is not None:
+                                    mktsets.append((fcmatSalesType, EDDNMarketItemSet(-1, -1, 'FCMaterials_Sales', None, sales)))
 
                         if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
                             if (lineno + 1, 0) not in mktlines:
