@@ -1101,13 +1101,13 @@ class EDDNSysDB(object):
         sysid = system.id if system is not None else None
 
         if name is None or name == '':
-            return (None, 'No station name')
+            return (None, 'No station name', None)
 
         if sysname is None or sysname == '':
-            return (None, 'No system name')
+            return (None, 'No system name', None)
 
         if timestamp is None:
-            return (None, 'No timestamp')
+            return (None, 'No timestamp', None)
 
         if stationtype is not None and stationtype == '':
             stationtype = None
@@ -1308,13 +1308,13 @@ class EDDNSysDB(object):
 
     def get_market_station(self, timer, name, sysname, marketid, timestamp):
         if name is None or name == '':
-            return (None, 'No station name')
+            return (None, 'No station name', None)
 
-        if sysname is None or sysname == '':
-            return (None, 'No system name')
+        if (sysname is None or sysname == '') and not carriernamere.match(name):
+            return (None, 'No system name', None)
 
         if timestamp is None:
-            return (None, 'No timestamp')
+            return (None, 'No timestamp', None)
 
         if carriernamere.match(name):
             sysname = ''
