@@ -1310,14 +1310,13 @@ class EDDNSysDB(object):
         if name is None or name == '':
             return (None, 'No station name', None)
 
-        if (sysname is None or sysname == '') and not carriernamere.match(name):
+        if carriernamere.match(name):
+            sysname = ''
+        elif sysname is None or sysname == '':
             return (None, 'No system name', None)
 
         if timestamp is None:
             return (None, 'No timestamp', None)
-
-        if carriernamere.match(name):
-            sysname = ''
 
         c = self.conn.cursor()
         c.execute('SELECT Id, MarketId, StationName, SystemName, IsRejected, ValidFrom, ValidUntil FROM MarketStations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
@@ -3171,11 +3170,11 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
     if (fileinfo.linecount is None 
         or fileinfo.populatedlinecount is None
         or (fileinfo.stationlinecount is None and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump'))
-        or (reprocessall == True and fileinfo.eventtype == 'Scan' and fileinfo.date >= ed300date.date()) 
-        or (reprocess == True 
-            and (fileinfo.linecount != fileinfo.infolinecount
-                 or (fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump') and fileinfo.stnlinecount != fileinfo.stationlinecount)
-                 or fileinfo.populatedlinecount != fileinfo.factionlinecount))):
+        or (reprocessall == True and fileinfo.eventtype == 'Scan' and fileinfo.date >= ed300date.date())
+        or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump', 'ApproachSettlement'))
+        or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
+        or (reprocess == True and fileinfo.stnlinecount != fileinfo.stationlinecount and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump'))
+        or (reprocess == True and fileinfo.populatedlinecount != fileinfo.factionlinecount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
             sys.stderr.write('{0}\n'.format(fn))
@@ -3184,6 +3183,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
                 stnlines = sysdb.get_station_file_lines(fileinfo.id)
+                mktlines = sysdb.get_market_set_file_lines(fileinfo.id)
                 infolines = sysdb.get_info_file_lines(fileinfo.id)
                 factionlines = sysdb.get_faction_file_lines(fileinfo.id)
                 linecount = 0
@@ -3192,210 +3192,224 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                 totalsize = 0
                 timer.time('load')
                 stntoinsert = []
+                mktsettoinsert = []
                 infotoinsert = []
                 factionstoinsert = []
+                nullset = EDDNMarketItemSet(0, 0, None, 0, None)
                 for lineno, line in enumerate(f):
-                    if (lineno + 1) not in infolines or (reprocessall == True and fileinfo.eventtype == 'Scan'):
-                        timer.time('read')
-                        msg = None
-                        try:
-                            msg = json.loads(line)
-                            body = msg['message']
-                            hdr = msg['header']
-                            eventtype = body.get('event')
+                    timer.time('read')
+                    msg = None
+                    try:
+                        msg = json.loads(line)
+                        body = msg['message']
+                        hdr = msg['header']
+                        eventtype = body.get('event')
 
-                            if 'StarSystem' in body:
-                                sysname = body['StarSystem']
-                            elif 'System' in body:
-                                sysname = body['System']
-                            elif 'SystemName' in body:
-                                sysname = body['SystemName']
-                            else:
-                                sysname = body['StarSystem']
-
-                            starpos = body['StarPos']
-                            sysaddr = body.get('SystemAddress')
-                            stationname = body.get('StationName')
-
-                            if fileinfo.eventtype == 'ApproachSettlement':
-                                stationname = body.get('Name')
-
-                            marketid = body.get('MarketID')
-                            stationtype = body.get('StationType')
-                            bodyname = body.get('Body')
-                            bodyid = body.get('BodyID')
-                            bodytype = body.get('BodyType')
-                            scanbodyname = body.get('BodyName')
-                            parents = body.get('Parents')
-                            factions = body.get('Factions')
-                            sysfaction = body['SystemFaction'] if 'SystemFaction' in body else (body.get('Faction'))
-                            sysgovern = body['SystemGovernment'] if 'SystemGovernment' in body else (body.get('Government'))
-                            sysalleg = body['SystemAllegiance'] if 'SystemAllegiance' in body else (body['Allegiance'] if 'Allegiance' in body else '')
-                            stnfaction = body.get('StationFaction')
-                            stngovern = body.get('StationGovernment')
-                            timestamp = body.get('timestamp')
-                            gwtimestamp = hdr.get('gatewayTimestamp')
-                            software = hdr.get('softwareName')
-                            distfromstar = body.get('DistanceFromArrivalLS')
-                        except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                            sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
-                            msg = {
-                                'rejectReason': 'Invalid',
-                                'exception': '{0}'.format(sys.exc_info()[1]),
-                                'rawmessage': line.decode('utf-8')
-                            }
-                            rejectout.write(json.dumps(msg) + '\n')
-                            timer.time('error')
-                            pass
+                        if 'StarSystem' in body:
+                            sysname = body['StarSystem']
+                        elif 'System' in body:
+                            sysname = body['System']
+                        elif 'SystemName' in body:
+                            sysname = body['SystemName']
                         else:
-                            if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
-                                marketid = None
-                            sqltimestamp = timestamp_to_sql(timestamp)
-                            sqlgwtimestamp = timestamp_to_sql(gwtimestamp)
-                            timer.time('parse')
-                            reject = False
-                            rejectReason = None
-                            rejectData = None
-                            systemid = None
-                            sysbodyid = None
-                            linelen = len(line)
+                            sysname = body['StarSystem']
 
-                            if factions is not None or sysfaction is not None or stnfaction is not None:
-                                poplinecount += 1
+                        starpos = body['StarPos']
+                        sysaddr = body.get('SystemAddress')
+                        stationname = body.get('StationName')
 
-                            if stationname is not None or marketid is not None:
-                                stnlinecount += 1
+                        if fileinfo.eventtype == 'ApproachSettlement':
+                            stationname = body.get('Name')
 
-                            if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
-                                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
-                                (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
-                                timer.time('sysquery')
-                                if system is not None:
-                                    systemid = system.id
-                                    if (lineno + 1) not in stnlines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
-                                        if stationname is not None and stationname != '':
-                                            (station, rejectReason, rejectData) = sysdb.get_station(timer, stationname, sysname, marketid, sqltimestamp, system, stationtype, bodyname, bodyid, bodytype, eventtype, fileinfo.test)
-                                            timer.time('stnquery')
+                        marketid = body.get('MarketID')
+                        stationtype = body.get('StationType')
+                        bodyname = body.get('Body')
+                        bodyid = body.get('BodyID')
+                        bodytype = body.get('BodyType')
+                        scanbodyname = body.get('BodyName')
+                        parents = body.get('Parents')
+                        factions = body.get('Factions')
+                        sysfaction = body['SystemFaction'] if 'SystemFaction' in body else (body.get('Faction'))
+                        sysgovern = body['SystemGovernment'] if 'SystemGovernment' in body else (body.get('Government'))
+                        sysalleg = body['SystemAllegiance'] if 'SystemAllegiance' in body else (body['Allegiance'] if 'Allegiance' in body else '')
+                        stnfaction = body.get('StationFaction')
+                        stngovern = body.get('StationGovernment')
+                        timestamp = body.get('timestamp')
+                        gwtimestamp = hdr.get('gatewayTimestamp')
+                        software = hdr.get('softwareName')
+                        distfromstar = body.get('DistanceFromArrivalLS')
+                    except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                        sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
+                        msg = {
+                            'rejectReason': 'Invalid',
+                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'rawmessage': line.decode('utf-8')
+                        }
+                        rejectout.write(json.dumps(msg) + '\n')
+                        timer.time('error')
+                        pass
+                    else:
+                        if marketid is not None and (marketid <= 0 or marketid > 1 << 32):
+                            marketid = None
+                        sqltimestamp = timestamp_to_sql(timestamp)
+                        sqlgwtimestamp = timestamp_to_sql(gwtimestamp)
+                        timer.time('parse')
+                        reject = False
+                        rejectbody = False
+                        rejectReason = None
+                        rejectData = None
+                        systemid = None
+                        sysbodyid = None
+                        linelen = len(line)
 
-                                            if station is not None:
-                                                stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                                            else:
-                                                reject = True
-                                        elif bodyname is not None and bodytype is not None and bodytype == 'Station':
-                                            (station, rejectReason, rejectData) = sysdb.get_station(timer, bodyname, sysname, None, sqltimestamp, system = system, bodyid = bodyid, eventtype = eventtype, test = fileinfo.test)
-                                            timer.time('stnquery')
+                        if factions is not None or sysfaction is not None or stnfaction is not None:
+                            poplinecount += 1
 
-                                            if station is not None:
-                                                stntoinsert += [(fileinfo.id, lineno + 1, station)]
-                                            else:
-                                                reject = True
+                        if stationname is not None or marketid is not None:
+                            stnlinecount += 1
 
-                                    if (lineno + 1) not in infolines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
-                                        if scanbodyname is not None:
-                                            (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
-                                            if scanbody is not None:
-                                                sysdb.insert_body_parents(timer, scanbody.id, system, bodyid, parents)
-                                                sysbodyid = scanbody.id
-                                            else:
-                                                reject = True
-                                            timer.time('bodyquery')
-                                        elif bodyname is not None and bodytype is not None and bodytype != 'Station':
-                                            (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, bodyname, sysname, bodyid, system, {}, sqltimestamp)
-                                            if scanbody is not None:
-                                                sysbodyid = scanbody.id
-                                            else:
-                                                reject = True
-                                            timer.time('bodyquery')
-                                    elif (reprocessall == True or (lineno + 1) not in infolines) and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
-                                        if scanbodyname is not None:
-                                            (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
-                                            if scanbody is not None:
-                                                sysbodyid = scanbody.id
-                                                sysdb.insert_body_parents(timer, scanbody.id, system, bodyid, parents)
-                                            else:
-                                                reject = True
-                                            timer.time('bodyquery')
-                                        elif bodyname is not None and bodytype is not None and bodytype != 'Station':
-                                            (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, bodyname, sysname, bodyid, system, {}, sqltimestamp)
-                                            if scanbody is not None:
-                                                sysbodyid = scanbody.id
-                                            else:
-                                                reject = True
-                                            timer.time('bodyquery')
+                        if sqltimestamp is not None and sqlgwtimestamp is not None and sqltimestamp < sqlgwtimestamp + timedelta(days = 1):
+                            starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                            (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                            timer.time('sysquery')
+                            if system is not None:
+                                systemid = system.id
 
-                                    if (lineno + 1) not in factionlines and not reject:
-                                        linefactions = []
-                                        linefactiondata = []
-                                        if factions is not None:
-                                            for n, faction in enumerate(factions):
-                                                linefactiondata += [{
-                                                    'Name': faction['Name'],
-                                                    'Government': faction['Government'],
-                                                    'Allegiance': faction.get('Allegiance'),
-                                                    'EntryNum': n
-                                                }]
-                                                linefactions += [(n, sysdb.get_faction(timer, faction['Name'], faction['Government'], faction.get('Allegiance')))]
-                                        if sysfaction is not None:
-                                            if type(sysfaction) is dict and 'Name' in sysfaction:
-                                                sysfaction = sysfaction['Name']
-                                            linefactiondata += [{
-                                                'Name': sysfaction,
-                                                'Government': sysgovern,
-                                                'Allegiance': sysalleg,
-                                                'EntryNum': -1
-                                            }]
-                                            linefactions += [(-1, sysdb.get_faction(timer, sysfaction, sysgovern, sysalleg))]
-                                        if stnfaction is not None:
-                                            if type(stnfaction) is dict and 'Name' in stnfaction:
-                                                stnfaction = stnfaction['Name']
-                                            if stnfaction != 'FleetCarrier':
-                                                linefactiondata += [{
-                                                    'Name': stnfaction,
-                                                    'Government': stngovern,
-                                                    'EntryNum': -2
-                                                }]
-                                                linefactions += [(-2, sysdb.get_faction(timer, stnfaction, stngovern, None))]
+                                if (lineno + 1, 0) not in mktlines and stationname is not None:
+                                    (mktstation, rejectReason, rejectData) = sysdb.get_market_station(timer, stationname, sysname, marketid, sqltimestamp)
 
-                                        if len(linefactions) != 0:
-                                            if len([fid for n, fid in linefactions if fid is None]) != 0:
-                                                reject = True
-                                                rejectReason = 'Faction not found'
-                                                rejectData = linefactiondata
-                                            else:
-                                                for n, faction in linefactions:
-                                                    factionstoinsert += [(fileinfo.id, lineno + 1, faction, n)]
-
-                                        timer.time('factionupdate')
-
-                                    if reject:
-                                        msg['rejectReason'] = rejectReason
-                                        msg['rejectData'] = rejectData
-                                        rejectout.write(json.dumps(msg) + '\n')
+                                    if mktstation is not None:
+                                        mktsettoinsert += [(fileinfo.id, lineno + 1, mktstation, 0, nullset)]
                                     else:
-                                        if (lineno + 1) not in infolines:
-                                            sysdb.insert_software(software)
-                                            infotoinsert += [(
-                                                fileinfo.id,
-                                                lineno + 1,
-                                                sqltimestamp,
-                                                sqlgwtimestamp,
-                                                sysdb.software[software],
-                                                systemid,
-                                                sysbodyid,
-                                                linelen,
-                                                distfromstar,
-                                                1 if 'BodyID' in body else 0,
-                                                1 if 'SystemAddress' in body else 0,
-                                                1 if 'MarketID' in body else 0
-                                            )]
+                                        reject = True
 
-                                else:
-                                    msg['rejectReason'] = rejectReason
-                                    msg['rejectData'] = rejectData
-                                    rejectout.write(json.dumps(msg) + '\n')
+                                if (lineno + 1) not in stnlines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
+                                    if stationname is not None and stationname != '':
+                                        (station, rejectReason, rejectData) = sysdb.get_station(timer, stationname, sysname, marketid, sqltimestamp, system, stationtype, bodyname, bodyid, bodytype, eventtype, fileinfo.test)
+                                        timer.time('stnquery')
+
+                                        if station is not None:
+                                            stntoinsert += [(fileinfo.id, lineno + 1, station)]
+                                        else:
+                                            reject = True
+                                    elif bodyname is not None and bodytype is not None and bodytype == 'Station':
+                                        (station, rejectReason, rejectData) = sysdb.get_station(timer, bodyname, sysname, None, sqltimestamp, system = system, bodyid = bodyid, eventtype = eventtype, test = fileinfo.test)
+                                        timer.time('stnquery')
+
+                                        if station is not None:
+                                            stntoinsert += [(fileinfo.id, lineno + 1, station)]
+                                        else:
+                                            reject = True
+
+                                if (lineno + 1) not in infolines and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
+                                    if scanbodyname is not None:
+                                        (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
+                                        if scanbody is not None:
+                                            sysdb.insert_body_parents(timer, scanbody.id, system, bodyid, parents)
+                                            sysbodyid = scanbody.id
+                                        else:
+                                            reject = True
+                                            rejectbody = True
+                                        timer.time('bodyquery')
+                                    elif bodyname is not None and bodytype is not None and bodytype != 'Station':
+                                        (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, bodyname, sysname, bodyid, system, {}, sqltimestamp)
+                                        if scanbody is not None:
+                                            sysbodyid = scanbody.id
+                                        else:
+                                            reject = True
+                                            rejectbody = True
+                                        timer.time('bodyquery')
+                                elif (reprocessall == True or (lineno + 1) not in infolines) and sqltimestamp is not None and not (sqltimestamp >= ed303date and sqltimestamp < ed304date and not allow303bodies):
+                                    if scanbodyname is not None:
+                                        (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, scanbodyname, sysname, bodyid, system, body, sqltimestamp)
+                                        if scanbody is not None:
+                                            sysbodyid = scanbody.id
+                                            sysdb.insert_body_parents(timer, scanbody.id, system, bodyid, parents)
+                                        else:
+                                            reject = True
+                                            rejectbody = True
+                                        timer.time('bodyquery')
+                                    elif bodyname is not None and bodytype is not None and bodytype != 'Station':
+                                        (scanbody, rejectReason, rejectData) = sysdb.get_body(timer, bodyname, sysname, bodyid, system, {}, sqltimestamp)
+                                        if scanbody is not None:
+                                            sysbodyid = scanbody.id
+                                        else:
+                                            reject = True
+                                            rejectbody = True
+                                        timer.time('bodyquery')
+
+                                if (lineno + 1) not in infolines and not rejectbody:
+                                    sysdb.insert_software(software)
+                                    infotoinsert += [(
+                                        fileinfo.id,
+                                        lineno + 1,
+                                        sqltimestamp,
+                                        sqlgwtimestamp,
+                                        sysdb.software[software],
+                                        systemid,
+                                        sysbodyid,
+                                        linelen,
+                                        distfromstar,
+                                        1 if 'BodyID' in body else 0,
+                                        1 if 'SystemAddress' in body else 0,
+                                        1 if 'MarketID' in body else 0
+                                    )]
+
+                                if (lineno + 1) not in factionlines and not reject:
+                                    linefactions = []
+                                    linefactiondata = []
+                                    if factions is not None:
+                                        for n, faction in enumerate(factions):
+                                            linefactiondata += [{
+                                                'Name': faction['Name'],
+                                                'Government': faction['Government'],
+                                                'Allegiance': faction.get('Allegiance'),
+                                                'EntryNum': n
+                                            }]
+                                            linefactions += [(n, sysdb.get_faction(timer, faction['Name'], faction['Government'], faction.get('Allegiance')))]
+                                    if sysfaction is not None:
+                                        if type(sysfaction) is dict and 'Name' in sysfaction:
+                                            sysfaction = sysfaction['Name']
+                                        linefactiondata += [{
+                                            'Name': sysfaction,
+                                            'Government': sysgovern,
+                                            'Allegiance': sysalleg,
+                                            'EntryNum': -1
+                                        }]
+                                        linefactions += [(-1, sysdb.get_faction(timer, sysfaction, sysgovern, sysalleg))]
+                                    if stnfaction is not None:
+                                        if type(stnfaction) is dict and 'Name' in stnfaction:
+                                            stnfaction = stnfaction['Name']
+                                        if stnfaction != 'FleetCarrier':
+                                            linefactiondata += [{
+                                                'Name': stnfaction,
+                                                'Government': stngovern,
+                                                'EntryNum': -2
+                                            }]
+                                            linefactions += [(-2, sysdb.get_faction(timer, stnfaction, stngovern, None))]
+
+                                    if len(linefactions) != 0:
+                                        if len([fid for n, fid in linefactions if fid is None]) != 0:
+                                            reject = True
+                                            rejectReason = 'Faction not found'
+                                            rejectData = linefactiondata
+                                        else:
+                                            for n, faction in linefactions:
+                                                factionstoinsert += [(fileinfo.id, lineno + 1, faction, n)]
+
+                                    timer.time('factionupdate')
+
                             else:
-                                msg['rejectReason'] = 'Timestamp error'
-                                rejectout.write(json.dumps(msg) + '\n')
+                                reject = True
+                        else:
+                            rejectReason = 'Timestamp error'
+                            rejectData = None
+                            reject = True
+
+                        if reject:
+                            msg['rejectReason'] = rejectReason
+                            msg['rejectData'] = rejectData
+                            rejectout.write(json.dumps(msg) + '\n')
 
                                 
                     linecount += 1
@@ -3407,6 +3421,10 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                             sysdb.add_file_line_stations(stntoinsert)
                             timer.time('stninsert', len(stntoinsert))
                             stntoinsert = []
+                        if len(mktsettoinsert) != 0:
+                            sysdb.add_file_line_market_sets(mktsettoinsert)
+                            timer.time('mktsetinsert', len(mktsettoinsert))
+                            mktsettoinsert = []
                         if len(infotoinsert) != 0:
                             sysdb.add_file_line_info(infotoinsert)
                             timer.time('infoinsert', len(infotoinsert))
@@ -3428,6 +3446,10 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                     sysdb.add_file_line_stations(stntoinsert)
                     timer.time('stninsert', len(stntoinsert))
                     stntoinsert = []
+                if len(mktsettoinsert) != 0:
+                    sysdb.add_file_line_market_sets(mktsettoinsert)
+                    timer.time('mktsetinsert', len(mktsettoinsert))
+                    mktsettoinsert = []
                 if len(infotoinsert) != 0:
                     sysdb.add_file_line_info(infotoinsert)
                     timer.time('infoinsert', len(infotoinsert))
