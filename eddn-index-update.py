@@ -2886,7 +2886,7 @@ def process_spansh_systems(sysdb, timer, rejectout):
             timer.time('read')
             try:
                 line = line.strip()
-                if line[-1] == ',':
+                if line[-1:] == b',':
                     line = line[:-1]
                 msg = json.loads(line)
                 sysaddr = msg['id64']
@@ -2934,7 +2934,6 @@ def process_spansh_systems(sysdb, timer, rejectout):
                     sys.stderr.write('  {0}\n'.format(i + 1))
                     sys.stderr.flush()
                     updatetitleprogress('SpanshSys:{0}'.format(i + 1))
-                    sysdb.save_edsm_sys_cache()
                 timer.time('commit')
 
     sys.stderr.write('  {0}\n'.format(i + 1))
