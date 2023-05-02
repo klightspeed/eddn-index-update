@@ -43,7 +43,7 @@ edsmstationsfile = edsmdumpdir + '/stations.json.gz'
 eddbsysfile = eddbdir + '/systems.csv.bz2'
 eddbstationsfile = eddbdir + '/stations.jsonl'
 
-spanshsysfile = spanshdir + '/Spansh/systems.json.gz'
+spanshsysfile = spanshdir + '/systems.json.gz'
 
 edsmsyscachefile = '/srv/cache/eddata/edsmsys-index-update-syscache.bin'
 edsmbodycachefile = '/srv/cache/eddata/edsmbody-index-update-bodycache.bin'
