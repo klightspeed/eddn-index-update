@@ -940,6 +940,19 @@ class EDDNSysDB(object):
 
                 timer.time('sysquerypgre')
                 if modsysaddr is not None:
+                    pgsysaddr = self.modsysaddr_to_sysaddr(modsysaddr)
+
+                    if sysaddr is not None and sysaddr != pgsysaddr:
+                        errmsg = 'System address mismatch for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, x, y, z)
+                        sys.stderr.write(errmsg)
+                        sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
+                        return (
+                            None,
+                            errmsg,
+                            self.get_reject_data(sysname, sysaddr, systems)
+                        )
+                        #raise ValueError('Unable to resolve system address')
+
                     c = self.conn.cursor()
                     c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
                     system = self._findsystem(c, sysname, starpos, sysaddr, systems)
