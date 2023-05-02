@@ -31,23 +31,34 @@ eddndir = config.rootdir + '/EDDN/data'
 edsmdumpdir = config.rootdir + '/EDSM/dumps'
 edsmbodiesdir = config.rootdir + '/EDSM/bodies'
 eddbdir = config.rootdir + '/EDDB/dumps'
+spanshdir = config.rootdir + '/Spansh'
+
 edsmsysfile = edsmdumpdir + '/systemsWithCoordinates.jsonl.bz2'
 edsmsyswithoutcoordsfile = edsmdumpdir + '/systemsWithoutCoordinates.jsonl.bz2'
 edsmsyswithoutcoordsprepurgefile = edsmdumpdir + '/systemsWithoutCoordinates-2020-09-30.jsonl.bz2'
 edsmhiddensysfile = edsmdumpdir + '/hiddenSystems.jsonl.bz2'
 edsmbodiesfile = edsmdumpdir + '/bodies.jsonl.bz2'
 edsmstationsfile = edsmdumpdir + '/stations.json.gz'
+
 eddbsysfile = eddbdir + '/systems.csv.bz2'
 eddbstationsfile = eddbdir + '/stations.jsonl'
+
+spanshsysfile = spanshdir + '/Spansh/systems.json.gz'
+
 edsmsyscachefile = '/srv/cache/eddata/edsmsys-index-update-syscache.bin'
 edsmbodycachefile = '/srv/cache/eddata/edsmbody-index-update-bodycache.bin'
+
 eddnrejectfile = config.outdir + '/eddn-index-update-reject.jsonl'
 eddnrejectdir = config.outdir + '/eddn-index-update-reject'
+
 edsmsysrejectfile = config.outdir + '/edsmsys-index-update-reject.jsonl'
 edsmbodiesrejectfile = config.outdir + '/edsmbodies-index-update-reject.jsonl'
 edsmstationsrejectfile = config.outdir + '/edsmstations-index-update-reject.jsonl'
+
 eddbsysrejectfile = config.outdir + '/eddbsys-index-update-reject.jsonl'
 eddbstationsrejectfile = config.outdir + '/eddbstations-index-update-reject.jsonl'
+
+spanshsysrejectfile = config.outdir + '/spanshsys-index-update-reject.jsonl'
 
 knownbodiessheeturi = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR9lEav_Bs8rZGRtwcwuOwQ2hIoiNJ_PWYAEgXk7E3Y-UD0r6uER04y4VoQxFAAdjMS4oipPyySoC3t/pub?gid=711269421&single=true&output=tsv'
 
@@ -152,6 +163,7 @@ argparser.add_argument('--edsmmissingbodies', dest='edsmmissingbodies', action='
 argparser.add_argument('--edsmstations', dest='edsmstations', action='store_const', const=True, default=False, help='Process EDSM stations dump')
 argparser.add_argument('--eddbsys', dest='eddbsys', action='store_const', const=True, default=False, help='Process EDDB systems dump')
 argparser.add_argument('--eddbstations', dest='eddbstations', action='store_const', const=True, default=False, help='Process EDDB stations dump')
+argparser.add_argument('--spanshsys', dest='spanshsys', action='store_const', const=True, default=False, help='Process Spansh systems dump')
 argparser.add_argument('--noeddn', dest='noeddn', action='store_const', const=True, default=False, help='Skip EDDN processing')
 argparser.add_argument('--processtitleprogress', dest='proctitleprogress', action='store_const', const=True, default=False, help='Update process title with progress')
 
@@ -2865,6 +2877,72 @@ def process_edsm_systems(sysdb, timer, rejectout):
     sysdb.save_edsm_sys_cache()
     timer.time('commit')
 
+def process_spansh_systems(sysdb, timer, rejectout):
+    sys.stderr.write('Processing Spansh systems\n')
+
+    with gzip.GzipFile(spanshsysfile, 'r') as f:
+        w = 0
+        for i, line in enumerate(f):
+            timer.time('read')
+            try:
+                line = line.strip()
+                if line[-1] == ',':
+                    line = line[:-1]
+                msg = json.loads(line)
+                sysaddr = msg['id64']
+                sysname = msg['name']
+                coords = msg['coords']
+                starpos = [coords['x'],coords['y'],coords['z']]
+                timestamp = msg['updateTime'].replace(' ', 'T').replace('+00', 'Z')
+            except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                rejectmsg = {
+                    'rejectReason': 'Invalid',
+                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'line': line.decode('utf-8', 'backslashreplace')
+                }
+                rejectout.write(json.dumps(rejectmsg) + '\n')
+                timer.time('error')
+                pass
+            else:
+                sqltimestamp = timestamp_to_sql(timestamp)
+                sqlts = int((sqltimestamp - tsbasedate).total_seconds())
+                timer.time('parse')
+                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                timer.time('sysquery', 0)
+
+                if system is not None:
+                    pass
+                else:
+                    rejectmsg = {
+                        'rejectReason': rejectReason,
+                        'rejectData': rejectData,
+                        'data': msg
+                    }
+                    rejectout.write(json.dumps(rejectmsg) + '\n')
+
+                w += 1
+
+            if ((i + 1) % 1000) == 0:
+                sysdb.commit()
+                sys.stderr.write('.' if w == 0 else '*')
+                sys.stderr.flush()
+                w = 0
+
+                if ((i + 1) % 64000) == 0:
+                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.flush()
+                    updatetitleprogress('SpanshSys:{0}'.format(i + 1))
+                    sysdb.save_edsm_sys_cache()
+                timer.time('commit')
+
+    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.flush()
+    sysdb.commit()
+    sysdb.save_edsm_sys_cache()
+    timer.time('commit')
+
 def process_edsm_systems_without_coords(sysdb, timer, rejectout):
     sys.stderr.write('Processing EDSM systems without coords\n')
     with bz2.BZ2File(edsmsyswithoutcoordsfile, 'r') as f:
@@ -4077,6 +4155,10 @@ def main():
             with open(eddbsysrejectfile, 'at') as rf:
                 process_eddb_systems(sysdb, timer, rf)
                             
+        if args.spanshsys:
+            with open(spanshsysrejectfile, 'at') as rf:
+                process_spansh_systems(sysdb, timer, rf)
+
     finally:
         timer.print_stats()
 
