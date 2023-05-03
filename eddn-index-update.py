@@ -2897,62 +2897,64 @@ def process_spansh_systems(sysdb, timer, rejectout):
         w = 0
         for i, line in enumerate(f):
             timer.time('read')
-            try:
-                line = line.strip()
-                if line[-1:] == b',':
-                    line = line[:-1]
-                msg = json.loads(line)
-                sysaddr = msg['id64']
-                sysname = msg['name']
-                coords = msg['coords']
-                starpos = [coords['x'],coords['y'],coords['z']]
-                timestamp = msg['updateTime'].replace(' ', 'T').replace('+00', 'Z')
-            except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
-                rejectmsg = {
-                    'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
-                    'line': line.decode('utf-8', 'backslashreplace')
-                }
-                rejectout.write(json.dumps(rejectmsg) + '\n')
-                timer.time('error')
-                pass
-            else:
-                sqltimestamp = timestamp_to_sql(timestamp)
-                sqlts = int((sqltimestamp - tsbasedate).total_seconds())
-                timer.time('parse')
-                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
-                (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
-                timer.time('sysquery', 0)
+            line = line.strip()
 
-                if system is not None:
-                    pass
-                else:
+            if line[:1] == '{':
+                try:
+                    line = line.strip()
+                    if line[-1:] == b',':
+                        line = line[:-1]
+                    msg = json.loads(line)
+                    sysaddr = msg['id64']
+                    sysname = msg['name']
+                    coords = msg['coords']
+                    starpos = [coords['x'],coords['y'],coords['z']]
+                    timestamp = msg['updateTime'].replace(' ', 'T').replace('+00', 'Z')
+                except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
+                    sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
                     rejectmsg = {
-                        'rejectReason': rejectReason,
-                        'rejectData': rejectData,
-                        'data': msg
+                        'rejectReason': 'Invalid',
+                        'exception': '{0}'.format(sys.exc_info()[1]),
+                        'line': line.decode('utf-8', 'backslashreplace')
                     }
                     rejectout.write(json.dumps(rejectmsg) + '\n')
+                    timer.time('error')
+                    pass
+                else:
+                    sqltimestamp = timestamp_to_sql(timestamp)
+                    sqlts = int((sqltimestamp - tsbasedate).total_seconds())
+                    timer.time('parse')
+                    starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
+                    (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
+                    timer.time('sysquery', 0)
 
-                w += 1
+                    if system is not None:
+                        pass
+                    else:
+                        rejectmsg = {
+                            'rejectReason': rejectReason,
+                            'rejectData': rejectData,
+                            'data': msg
+                        }
+                        rejectout.write(json.dumps(rejectmsg) + '\n')
 
-            if ((i + 1) % 1000) == 0:
-                sysdb.commit()
-                sys.stderr.write('.' if w == 0 else '*')
-                sys.stderr.flush()
-                w = 0
+                    w += 1
 
-                if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                if ((i + 1) % 1000) == 0:
+                    sysdb.commit()
+                    sys.stderr.write('.' if w == 0 else '*')
                     sys.stderr.flush()
-                    updatetitleprogress('SpanshSys:{0}'.format(i + 1))
-                timer.time('commit')
+                    w = 0
+
+                    if ((i + 1) % 64000) == 0:
+                        sys.stderr.write('  {0}\n'.format(i + 1))
+                        sys.stderr.flush()
+                        updatetitleprogress('SpanshSys:{0}'.format(i + 1))
+                    timer.time('commit')
 
     sys.stderr.write('  {0}\n'.format(i + 1))
     sys.stderr.flush()
     sysdb.commit()
-    sysdb.save_edsm_sys_cache()
     timer.time('commit')
 
 def process_edsm_systems_without_coords(sysdb, timer, rejectout):
