@@ -3273,7 +3273,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
         or (reprocessall == True and fileinfo.eventtype == 'Scan' and fileinfo.date >= ed300date.date())
         or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump', 'ApproachSettlement'))
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
-        or (reprocess == True and fileinfo.bodycount != fileinfo.infolinecount and fileinfo.eventtype in ('Scan', 'ScanBaryCentre'))
+        or (reprocess == True and fileinfo.linecount != fileinfo.bodylinecount and fileinfo.eventtype in ('Scan', 'ScanBaryCentre'))
         or (reprocess == True and fileinfo.stnlinecount != fileinfo.stationlinecount and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump'))
         or (reprocess == True and fileinfo.populatedlinecount != fileinfo.factionlinecount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
