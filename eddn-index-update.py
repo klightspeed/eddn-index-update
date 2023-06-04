@@ -141,7 +141,7 @@ ed400date = datetime.strptime('2021-05-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 
 EDDNSystem = namedtuple('EDDNSystem', ['id', 'id64', 'name', 'x', 'y', 'z', 'hascoords'])
 EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'loctype', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil', 'test'])
-EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'factionlinecount', 'navroutesystemcount', 'marketitemsetcount', 'populatedlinecount', 'stationlinecount', 'routesystemcount', 'marketsetcount', 'test'])
+EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'bodylinecount', 'factionlinecount', 'navroutesystemcount', 'marketitemsetcount', 'populatedlinecount', 'stationlinecount', 'routesystemcount', 'marketsetcount', 'test'])
 EDDNRegion = namedtuple('EDDNRegion', ['id', 'name', 'x0', 'y0', 'z0', 'sizex', 'sizey', 'sizez', 'regionaddr', 'isharegion'])
 EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'bodyid', 'category', 'argofperiapsis', 'validfrom', 'validuntil', 'isrejected'])
 EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
@@ -948,7 +948,7 @@ class EDDNSysDB(object):
                         sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
                         return (
                             None,
-                            errmsg,
+                            'System address mismatch',
                             self.get_reject_data(sysname, sysaddr, systems)
                         )
                         #raise ValueError('Unable to resolve system address')
@@ -2217,8 +2217,16 @@ class EDDNSysDB(object):
     def add_file_line_info(self, linelist):
         self.conn.cursor().executemany(
             'INSERT INTO FileLineInfo ' +
-            '(FileId, LineNo, Timestamp, GatewayTimestamp, SoftwareId, SystemId, BodyId, LineLength, DistFromArrivalLS, HasBodyId, HasSystemAddress, HasMarketId) VALUES ' +
-            '(%s,     %s,     %s,        %s,               %s,         %s,       %s,     %s,         %s,                %s,        %s,               %s)',
+            '(FileId, LineNo, Timestamp, GatewayTimestamp, SoftwareId, SystemId, LineLength, DistFromArrivalLS, HasBodyId, HasSystemAddress, HasMarketId) VALUES ' +
+            '(%s,     %s,     %s,        %s,               %s,         %s,       %s,         %s,                %s,        %s,               %s)',
+            linelist
+        )
+
+    def add_file_line_bodies(self, linelist):
+        self.conn.cursor().executemany(
+            'INSERT INTO FileLineBodies ' +
+            '(FileId, LineNo, BodyId, GatewayTimestamp) VALUES ' +
+            '(%s,     %s,     %s,     %s)',
             linelist
         )
 
@@ -2232,11 +2240,11 @@ class EDDNSysDB(object):
         )
 
     def add_file_line_route_systems(self, linelist):
-        values = [(fileid, lineno, system.id, entrynum) for fileid, lineno, system, entrynum in linelist]
+        values = [(fileid, lineno, system.id, entrynum, gatewayTimestamp) for fileid, lineno, system, entrynum, gatewayTimestamp in linelist]
         self.conn.cursor().executemany(
             'INSERT INTO FileLineNavRoutes ' +
-            '(FileId, LineNo, SystemId, EntryNum) VALUES ' +
-            '(%s,     %s,     %s,       %s)',
+            '(FileId, LineNo, SystemId, EntryNum, GatewayTimestamp) VALUES ' +
+            '(%s,     %s,     %s,       %s,       %s)',
             values
         )
 
@@ -2266,19 +2274,13 @@ class EDDNSysDB(object):
 
     def get_info_file_lines(self, fileid):
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, Timestamp, SystemId, BodyId FROM FileLineInfo WHERE FileId = %s', (fileid,))
+        cursor.execute('SELECT LineNo, Timestamp, SystemId FROM FileLineInfo WHERE FileId = %s', (fileid,))
 
-        return { row[0]: (row[1], row[2], row[3]) for row in cursor }
+        return { row[0]: (row[1], row[2]) for row in cursor }
 
-    def get_info_system_file_lines(self, fileid):
+    def get_body_file_lines(self, fileid):
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, SystemId FROM FileLineInfo WHERE FileId = %s', (fileid,))
-
-        return { row[0]: row[1] for row in cursor if row[1] is not None }
-
-    def get_info_body_file_lines(self, fileid):
-        cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, BodyId FROM FileLineInfo WHERE FileId = %s', (fileid,))
+        cursor.execute('SELECT LineNo, BodyId FROM FileLineBodies WHERE FileId = %s', (fileid,))
 
         return { row[0]: row[1] for row in cursor if row[1] is not None }
 
@@ -2345,6 +2347,11 @@ class EDDNSysDB(object):
         cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineInfo GROUP BY FileId')
         infolinecounts = { row[0]: row[1] for row in cursor }
 
+        sys.stderr.write('    Getting body line counts\n')
+        cursor = mysql.makestreamingcursor(self.conn)
+        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineBodies GROUP BY FileId')
+        bodylinecounts = { row[0]: row[1] for row in cursor }
+
         sys.stderr.write('    Getting faction line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
         cursor.execute('SELECT FileId, COUNT(DISTINCT LineNo) FROM FileLineFactions GROUP BY FileId')
@@ -2368,7 +2375,7 @@ class EDDNSysDB(object):
                 FileName, 
                 Date, 
                 EventType, 
-                LineCount, 
+                LineCount,
                 PopulatedLineCount,
                 StationLineCount,
                 NavRouteSystemCount,
@@ -2386,6 +2393,7 @@ class EDDNSysDB(object):
                 row[4],
                 stnlinecounts.get(row[0]) or 0,
                 infolinecounts.get(row[0]) or 0,
+                bodylinecounts.get(row[0]) or 0,
                 factionlinecounts.get(row[0]) or 0,
                 navroutelinecounts.get(row[0]) or 0,
                 marketitemsetcounts.get(row[0]) or 0,
@@ -3265,6 +3273,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
         or (reprocessall == True and fileinfo.eventtype == 'Scan' and fileinfo.date >= ed300date.date())
         or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump', 'ApproachSettlement'))
         or (reprocess == True and fileinfo.linecount != fileinfo.infolinecount)
+        or (reprocess == True and fileinfo.bodycount != fileinfo.infolinecount and fileinfo.eventtype in ('Scan', 'ScanBaryCentre'))
         or (reprocess == True and fileinfo.stnlinecount != fileinfo.stationlinecount and fileinfo.eventtype in ('Docked', 'Location', 'CarrierJump'))
         or (reprocess == True and fileinfo.populatedlinecount != fileinfo.factionlinecount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
@@ -3277,6 +3286,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                 stnlines = sysdb.get_station_file_lines(fileinfo.id)
                 mktlines = sysdb.get_market_set_file_lines(fileinfo.id)
                 infolines = sysdb.get_info_file_lines(fileinfo.id)
+                bodylines = sysdb.get_body_file_lines(fileinfo.id)
                 factionlines = sysdb.get_faction_file_lines(fileinfo.id)
                 linecount = 0
                 poplinecount = 0
@@ -3286,6 +3296,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                 stntoinsert = []
                 mktsettoinsert = []
                 infotoinsert = []
+                bodiestoinsert = []
                 factionstoinsert = []
                 nullset = EDDNMarketItemSet(0, 0, None, 0, None)
                 for lineno, line in enumerate(f):
@@ -3430,7 +3441,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                                             rejectbody = True
                                         timer.time('bodyquery')
 
-                                if (lineno + 1) not in infolines and not rejectbody:
+                                if (lineno + 1) not in infolines:
                                     sysdb.insert_software(software)
                                     infotoinsert += [(
                                         fileinfo.id,
@@ -3439,12 +3450,19 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                                         sqlgwtimestamp,
                                         sysdb.software[software],
                                         systemid,
-                                        sysbodyid,
                                         linelen,
                                         distfromstar,
                                         1 if 'BodyID' in body else 0,
                                         1 if 'SystemAddress' in body else 0,
                                         1 if 'MarketID' in body else 0
+                                    )]
+
+                                if (lineno + 1) not in bodylines and not rejectbody:
+                                    bodiestoinsert += [(
+                                        fileinfo.id,
+                                        lineno + 1,
+                                        sysbodyid,
+                                        sqlgwtimestamp
                                     )]
 
                                 if (lineno + 1) not in factionlines and not reject:
@@ -3521,6 +3539,10 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                             sysdb.add_file_line_info(infotoinsert)
                             timer.time('infoinsert', len(infotoinsert))
                             infotoinsert = []
+                        if len(bodiestoinsert) != 0:
+                            sysdb.add_file_line_bodies(bodiestoinsert)
+                            timer.time('bodiesinsert', len(bodiestoinsert))
+                            bodiestoinsert = []
                         if len(factionstoinsert) != 0:
                             sysdb.add_file_line_factions(factionstoinsert)
                             timer.time('factioninsert', len(factionstoinsert))
@@ -3546,6 +3568,10 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                     sysdb.add_file_line_info(infotoinsert)
                     timer.time('infoinsert', len(infotoinsert))
                     infotoinsert = []
+                if len(bodiestoinsert) != 0:
+                    sysdb.add_file_line_bodies(bodiestoinsert)
+                    timer.time('bodiesinsert', len(bodiestoinsert))
+                    bodiestoinsert = []
                 if len(factionstoinsert) != 0:
                     sysdb.add_file_line_factions(factionstoinsert)
                     timer.time('factioninsert', len(factionstoinsert))
@@ -3645,7 +3671,7 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
                             else:
                                 for system, n, _, _ in lineroutes:
                                     if (lineno + 1, n) not in navroutelines:
-                                        routesystemstoinsert += [(fileinfo.id, lineno + 1, system, n)]
+                                        routesystemstoinsert += [(fileinfo.id, lineno + 1, system, n, sqlgwtimestamp)]
                                 
                                 if (lineno + 1) not in infolines:
                                     sysdb.insert_software(software)
@@ -3657,7 +3683,6 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
                                         sqlgwtimestamp,
                                         sysdb.software[software],
                                         system.id,
-                                        None,
                                         linelen,
                                         None,
                                         0,
@@ -3869,7 +3894,6 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                                     sqlgwtimestamp,
                                     sysdb.software[software],
                                     systemid,
-                                    None,
                                     len(line),
                                     None,
                                     0,
@@ -4015,7 +4039,6 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                                     sqlgwtimestamp,
                                     sysdb.software[software],
                                     None,
-                                    None,
                                     len(line),
                                     None,
                                     0,
@@ -4099,6 +4122,7 @@ def main():
         'edsmupdate',
         'eddbupdate',
         'infoinsert',
+        'bodiesinsert',
         'factionupdate',
         'factioninsert',
         'routesysteminsert',
