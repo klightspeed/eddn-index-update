@@ -139,3 +139,6 @@ edts/
 
 # VS Code
 .vscode/
+
+# Config
+eddnindex/config.py
