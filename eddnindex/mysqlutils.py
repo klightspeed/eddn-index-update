@@ -1,4 +1,4 @@
-import config
+from . import config
 
 if config.conntype == 'mysql.connector':
     import mysql.connector
