@@ -4307,7 +4307,7 @@ def main():
 
     try:
         conn = mysql.createconnection()
-        sysdb = EDDNSysDB(conn, args.edsmsys, args.edsmbodies or args.edsmmissingbodies, args.eddbsys)
+        sysdb = EDDNSysDB(conn, args.edsmsysdump, args.edsmbodies or args.edsmmissingbodies, args.eddbsys)
         timer.time('init')
 
         if not args.noeddn:
