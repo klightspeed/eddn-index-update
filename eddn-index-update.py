@@ -155,7 +155,11 @@ EDSMSystemFile = namedtuple('EDSMSystemFile', ['id', 'name', 'date', 'linecount'
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
 argparser.add_argument('--reprocess', dest='reprocess', action='store_const', const=True, default=False, help='Reprocess files with unprocessed entries')
+argparser.add_argument('--reprocess-since', dest='reprocess_since', action='store', type=lambda d: datetime.strptime(d, '%Y-%m-%d'), default=None, help='Reprocess files with unprocessed entries starting at given date')
+argparser.add_argument('--reprocess-eventtype', dest='reprocess_all_events', action='append', help='Reprocess files with unprocessed entries with given event types')
 argparser.add_argument('--reprocess-all', dest='reprocessall', action='store_const', const=True, default=False, help='Reprocess all files')
+argparser.add_argument('--reprocess-all-since', dest='reprocess_all_since', action='store', type=lambda d: datetime.strptime(d, '%Y-%m-%d'), default=None, help='Reprocess all files starting at given date')
+argparser.add_argument('--reprocess-all-eventtype', dest='reprocess_all_events', action='append', help='Reprocess all files with given event types')
 argparser.add_argument('--nojournal', dest='nojournal', action='store_const', const=True, default=False, help='Skip EDDN Journal messages')
 argparser.add_argument('--market', dest='market', action='store_const', const=True, default=False, help='Process market/shipyard/outfitting messages')
 argparser.add_argument('--navroute', dest='navroute', action='store_const', const=True, default=False, help='Process EDDN NavRoute messages')
@@ -4317,18 +4321,60 @@ def main():
             if not args.nojournal:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype not in ('NavRoute', 'FCMaterials'):
-                        process_eddn_journal_file(sysdb, timer, filename, fileinfo, args.reprocess, args.reprocessall, rf)
+                        reprocessall = (args.reprocessall
+                            or (args.reprocess_all_since is not None
+                                and fileinfo.date >= args.reprocess_all_since
+                                and (len(args.reprocess_all_events) == 0
+                                     or fileinfo.eventtype in args.reprocess_all_events)
+                            )
+                        )
+
+                        reprocess = (args.reprocess
+                            or args.reprocessall
+                            or (args.reprocess_since is not None
+                                and fileinfo.date >= args.reprocess_since
+                                and (len(args.reprocess_events) == 0
+                                     or fileinfo.eventtype in args.reprocess_events)
+                            )
+                        )
+
+                        process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, reprocessall, rf)
             if args.navroute:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype == 'NavRoute':
-                        process_eddn_journal_route(sysdb, timer, filename, fileinfo, args.reprocess, rf)
+                        reprocess = (args.reprocess
+                            or args.reprocessall
+                            or (args.reprocess_since is not None
+                                and fileinfo.date >= args.reprocess_since
+                                and (len(args.reprocess_events) == 0
+                                     or fileinfo.eventtype in args.reprocess_events)
+                            )
+                        )
+
+                        process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, rf)
             if args.fcmaterials:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype == "FCMaterials":
-                        process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, args.reprocess, rf)
+                        reprocess = (args.reprocess
+                            or args.reprocessall
+                            or (args.reprocess_since is not None
+                                and fileinfo.date >= args.reprocess_since
+                                and (len(args.reprocess_events) == 0
+                                     or fileinfo.eventtype in args.reprocess_events)
+                            )
+                        )
+
+                        process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, rf)
             if args.market:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is None:
+                        reprocess = (args.reprocess
+                            or args.reprocessall
+                            or (args.reprocess_since is not None
+                                and fileinfo.date >= args.reprocess_since
+                            )
+                        )
+
                         process_eddn_market_file(sysdb, timer, filename, fileinfo, args.reprocess, rf)
 
         if args.edsmsysdump:
@@ -4347,7 +4393,14 @@ def main():
                 timer.time('init', 0)
 
                 for filename, fileinfo in files.items():
-                    process_edsm_systems(sysdb, filename, fileinfo, args.reprocess, timer, rf)
+                    reprocess = (args.reprocess
+                        or args.reprocessall
+                        or (args.reprocess_since is not None
+                            and fileinfo.date >= args.reprocess_since
+                        )
+                    )
+
+                    process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rf)
 
         if args.edsmbodies:
             with open(edsmbodiesrejectfile, 'at') as rf:
@@ -4359,7 +4412,14 @@ def main():
                 sys.stderr.flush()
 
                 for filename, fileinfo in files.items():
-                    process_edsm_bodies(sysdb, filename, fileinfo, args.reprocess, timer, rf)
+                    reprocess = (args.reprocess
+                        or args.reprocessall
+                        or (args.reprocess_since is not None
+                            and fileinfo.date >= args.reprocess_since
+                        )
+                    )
+
+                    process_edsm_bodies(sysdb, filename, fileinfo, reprocess, timer, rf)
         
         if args.edsmmissingbodies:
             process_edsm_missing_bodies(sysdb, timer)
