@@ -198,7 +198,7 @@ def updatetitleprogress(progress):
         proctitleprogresspos = title.find('--processtitleprogress')
 
     if proctitleprogresspos > 0:
-        title = title[0:proctitleprogresspos] + '[{0:20.20s}]'.format(progress) + title[proctitleprogresspos + 22:]
+        title = f'{title[0:proctitleprogresspos]}[{progress:20.20s}]{title[proctitleprogresspos + 22:]}'
         setproctitle(title)
 
 class EDDNRejectData(object):
@@ -357,10 +357,10 @@ class EDDNSysDB(object):
                             maxedsmid = edsmid
                     sys.stderr.write('.')
                     if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmsysid, maxedsmid))
+                        sys.stderr.write(f'  {i} / {maxedsmsysid} ({maxedsmid})\n')
                     sys.stderr.flush()
                     timer.time('load_edsm_sys', len(rows))
-                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmsysid))
+                sys.stderr.write(f'  {i} / {maxedsmsysid}\n')
                 with open(edsmsyscachefile + '.tmp', 'wb') as f:
                     self.edsmsysids.tofile(f)
                 os.rename(edsmsyscachefile + '.tmp', edsmsyscachefile)
@@ -400,10 +400,10 @@ class EDDNSysDB(object):
                         maxeddbid = eddbid
                 sys.stderr.write('.')
                 if (i % 640000) == 0:
-                    sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxeddbsysid, maxeddbid))
+                    sys.stderr.write(f'  {i} / {maxeddbsysid} ({maxeddbid})\n')
                 sys.stderr.flush()
                 timer.time('load_eddb_sys', len(rows))
-            sys.stderr.write('  {0} / {1}\n'.format(i, maxeddbsysid))
+            sys.stderr.write(f'  {i} / {maxeddbsysid}\n')
 
     def load_edsm_bodies(self, conn, timer):
         c = mysql.makestreamingcursor(conn)
@@ -452,10 +452,10 @@ class EDDNSysDB(object):
                             maxedsmid = edsmid
                     sys.stderr.write('.')
                     if (i % 640000) == 0:
-                        sys.stderr.write('  {0} / {1} ({2})\n'.format(i, maxedsmbodyid, maxedsmid))
+                        sys.stderr.write(f'  {i} / {maxedsmbodyid} ({maxedsmid})\n')
                     sys.stderr.flush()
                     timer.time('load_edsm_body', len(rows))
-                sys.stderr.write('  {0} / {1}\n'.format(i, maxedsmbodyid))
+                sys.stderr.write(f'  {i} / {maxedsmbodyid}\n')
 
     def load_parent_sets(self, conn, timer):
         sys.stderr.write('Loading Parent Sets\n')
@@ -828,15 +828,7 @@ class EDDNSysDB(object):
                 mid2 = chr(((mid // (26 * 26)) % 26) + 65)
                 mid3 = mid // (26 * 26 * 26)
                 mid3 = '' if mid3 == 0 else str(mid3) + '-'
-                rejectdata['id64name'] = '{0} {1}{2}-{3} {4}{5}{6}'.format(
-                        ri.name,
-                        mid1a,
-                        mid1b,
-                        mid2,
-                        masscode,
-                        mid3,
-                        seq
-                    )
+                rejectdata['id64name'] = f'{ri.name} {mid1a}{mid1b}-{mid2} {masscode}{mid3}{seq}'
         
         if pgsysmatch:
             regionname = pgsysmatch[1]
@@ -951,7 +943,7 @@ class EDDNSysDB(object):
                     pgsysaddr = self.modsysaddr_to_sysaddr(modsysaddr)
 
                     if sysaddr is not None and sysaddr != pgsysaddr:
-                        errmsg = 'System address mismatch for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, x, y, z)
+                        errmsg = f'System address mismatch for system {sysname} [{sysaddr}] ({x},{y},{z})\n'
                         sys.stderr.write(errmsg)
                         sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
                         return (
@@ -969,7 +961,7 @@ class EDDNSysDB(object):
                     if system is not None:
                         return (system, None, None)
                 else:
-                    errmsg = 'Unable to resolve system address for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, x, y, z)
+                    errmsg = f'Unable to resolve system address for system {sysname} [{sysaddr}] ({x},{y},{z})\n'
                     sys.stderr.write(errmsg)
                     sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
                     return (
@@ -979,9 +971,9 @@ class EDDNSysDB(object):
                     )
                     #raise ValueError('Unable to resolve system address')
             else:
-                errmsg = 'Region {5} not found for system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, x, y, z, regionname)
+                errmsg = f'Region {regionname} not found for system {sysname} [{sysaddr}] ({x},{y},{z})\n'
                 sys.stderr.write(errmsg)
-                sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
+                sys.stderr.writelines([f'{s}\n' for s in systems])
                 return (
                     None,
                     errmsg,
@@ -1120,7 +1112,7 @@ class EDDNSysDB(object):
 
         timer.time('sysselectmaddr')
 
-        errmsg = 'Unable to resolve system {0} [{1}] ({2},{3},{4})\n'.format(sysname, sysaddr, x, y, z)
+        errmsg = f'Unable to resolve system {sysname} [{sysaddr}] ({x},{y},{z})\n'
         #sys.stderr.write(errmsg)
         #sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
         #raise ValueError('Unable to find system')
@@ -1986,7 +1978,7 @@ class EDDNSysDB(object):
             return None
 
     def get_bodies_from_edsm_by_id(self, edsmid, timer):
-        url = 'https://www.edsm.net/api-body-v1/get?id={0}'.format(edsmid)
+        url = f'https://www.edsm.net/api-body-v1/get?id={edsmid}'
         
         while True:
             try:
@@ -2011,7 +2003,7 @@ class EDDNSysDB(object):
             timer.time('edsmhttp')
             return []
 
-        url = 'https://www.edsm.net/api-system-v1/bodies?systemId={0}'.format(edsmsysid)
+        url = f'https://www.edsm.net/api-system-v1/bodies?systemId={edsmsysid}'
 
         while True:
             try:
@@ -2045,7 +2037,7 @@ class EDDNSysDB(object):
         return msg['bodies']
 
     def update_system_from_edsm_by_id(self, edsmid, timer, rejectout):
-        url = 'https://www.edsm.net/api-v1/system?systemId={0}&coords=1&showId=1&submitted=1&includeHidden=1'.format(edsmid)
+        url = f'https://www.edsm.net/api-v1/system?systemId={edsmid}&coords=1&showId=1&submitted=1&includeHidden=1'
         try:
             while True:
                 try:
@@ -2072,7 +2064,7 @@ class EDDNSysDB(object):
                 return False
         except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
             (exctype, excvalue, traceback) = sys.exc_info()
-            sys.stderr.write('Error: {0}\n'.format(exctype))
+            sys.stderr.write(f'Error: {exctype}\n')
             import pdb; pdb.post_mortem(traceback)
             timer.time('error')
             return True
@@ -2554,7 +2546,7 @@ class Timer(object):
         sys.stderr.write('\nTimes taken:\n')
         for name, time in sorted(self.timers.items()):
             count = self.counts[name]
-            sys.stderr.write('  {0}: {1}s / {2} ({3}ms/iteration)\n'.format(name, time, count, time * 1000 / (count or 1)))
+            sys.stderr.write(f'  {name}: {time}s / {count} ({time * 1000 / (count or 1)}ms/iteration)\n')
 
 def timestamp_to_sql(timestamp):
     if timestamp is None:
@@ -2575,7 +2567,7 @@ def process_edsm_missing_bodies(sysdb, timer):
     from timeit import default_timer
     tstart = default_timer()
 
-    fn = 'fetchbodies-{0}.jsonl'.format(datetime.utcnow().isoformat())
+    fn = f'fetchbodies-{datetime.utcnow().isoformat()}.jsonl'
     fileid = sysdb.insert_edsm_file(fn)
 
     timer.time('bodyquery')
@@ -2589,7 +2581,7 @@ def process_edsm_missing_bodies(sysdb, timer):
             row = sysdb.edsmbodyids[i]
 
             if row[1] == 0:
-                sys.stderr.write('{0:10d}'.format(i) + '\b' * 10)
+                sys.stderr.write(f'{i:10d}' + '\b' * 10)
                 sys.stderr.flush()
 
                 bodies = sysdb.get_bodies_from_edsm_by_id(i, timer)
@@ -2663,9 +2655,9 @@ def process_edsm_missing_bodies(sysdb, timer):
                 sys.stderr.flush()
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDSMBodyM:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDSMBodyM:{i + 1}')
                 
                 if w2 >= 10:
                     sysdb.save_edsm_body_cache()
@@ -2679,7 +2671,7 @@ def process_edsm_missing_bodies(sysdb, timer):
                 #if default_timer() - tstart > 18 * 60 * 60:
                 #    break
 
-        sys.stderr.write('  {0}\n'.format(i + 1))
+        sys.stderr.write(f'  {i + 1}\n')
         sys.stderr.flush()
         sysdb.commit()
         sysdb.save_edsm_body_cache()
@@ -2702,7 +2694,7 @@ def process_edsm_bodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
             or fileinfo.linecount is None
             or (reprocess == True and fileinfo.linecount != fileinfo.bodylinecount)):
             
-            sys.stderr.write('Processing EDSM bodies file {0} ({1} / {2})\n'.format(filename, fileinfo.bodylinecount, fileinfo.linecount))
+            sys.stderr.write(f'Processing EDSM bodies file {filename} ({fileinfo.bodylinecount} / {fileinfo.linecount})\n')
 
             lines = sysdb.get_edsm_body_file_lines(fileinfo.id)
             linecount = 0
@@ -2731,10 +2723,10 @@ def process_edsm_bodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
                             bodytype = msg['type']
                             subtype = msg['subType']
                         except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                            sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                            sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                             rejectmsg = {
                                 'rejectReason': 'Invalid',
-                                'exception': '{0}'.format(sys.exc_info()[1]),
+                                'exception': str(sys.exc_info()[1]),
                                 'line': line.decode('utf-8', 'backslashreplace')
                             }
                             rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -2802,9 +2794,9 @@ def process_edsm_bodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
                             bodiestoinsert = []
 
                         if (linecount % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(linecount))
+                            sys.stderr.write(f'  {linecount}\n')
                             sys.stderr.flush()
-                            updatetitleprogress('{0}:{1}'.format(filename,linecount))
+                            updatetitleprogress(f'{filename}:{linecount}')
 
                             if updatecache:
                                 sysdb.save_edsm_body_cache()
@@ -2815,9 +2807,9 @@ def process_edsm_bodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
                 timer.time('edsmbodyinsert', len(bodiestoinsert))
                 bodiestoinsert = []
 
-            sys.stderr.write('  {0}\n'.format(linecount))
+            sys.stderr.write(f'  {linecount}\n')
             sys.stderr.flush()
-            updatetitleprogress('{0}:{1}'.format(filename,linecount))
+            updatetitleprogress(f'{filename}:{linecount}')
             sysdb.commit()
             sysdb.save_edsm_body_cache()
             timer.time('commit')
@@ -2840,10 +2832,10 @@ def process_edsm_stations(sysdb, timer, rejectout):
                 sysname = msg['systemName']
                 timestamp = msg['updateTime']['information'].replace(' ', 'T')
             except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                 rejectmsg = {
                     'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'exception': str(sys.exc_info()[1]),
                     'data': msg
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -2891,11 +2883,11 @@ def process_edsm_stations(sysdb, timer, rejectout):
                 w = 0
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
                 timer.time('commit')
                     
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     timer.time('commit')
@@ -2914,7 +2906,7 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
             or fileinfo.linecount is None
             or (reprocess == True and fileinfo.linecount != fileinfo.bodylinecount)):
             
-            sys.stderr.write('Processing EDSM systems file {0} ({1} / {2})\n'.format(filename, fileinfo.systemlinecount, fileinfo.linecount))
+            sys.stderr.write(f'Processing EDSM systems file {filename} ({fileinfo.systemlinecount} / {fileinfo.linecount})\n')
 
             lines = sysdb.get_edsm_system_file_lines(fileinfo.id)
             linecount = 0
@@ -2936,10 +2928,10 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
                             timestamp = msg['date'].replace(' ', 'T')
                             coordslocked = msg.get('coordsLocked')
                         except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                            sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                            sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                             rejectmsg = {
                                 'rejectReason': 'Invalid',
-                                'exception': '{0}'.format(sys.exc_info()[1]),
+                                'exception': str(sys.exc_info()[1]),
                                 'line': line.decode('utf-8', 'backslashreplace')
                             }
                             rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -2980,24 +2972,24 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
                             systemstoinsert = []
 
                         if (linecount % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(linecount))
+                            sys.stderr.write(f'  {linecount}\n')
                             sys.stderr.flush()
-                            updatetitleprogress('{0}:{1}'.format(filename, linecount))
+                            updatetitleprogress(f'{filename}:{linecount}')
 
             if len(systemstoinsert) != 0:
                 sysdb.add_edsm_file_line_systems(systemstoinsert)
                 timer.time('edsmsysinsert', len(systemstoinsert))
                 systemstoinsert = []
 
-            sys.stderr.write('  {0}\n'.format(linecount))
+            sys.stderr.write(f'  {linecount}\n')
             sys.stderr.flush()
-            updatetitleprogress('{0}:{1}'.format(filename, linecount))
+            updatetitleprogress(f'{filename}:{linecount}')
             sysdb.commit()
             timer.time('commit')
             sysdb.update_edsm_system_file_info(fileinfo.id, linecount, totalsize, comprsize)
 
 def process_edsm_systems_with_coords(sysdb, timer, rejectout):
-    sys.stderr.write('Clearing processed flag on EDSM systems')
+    sys.stderr.write('Clearing processed flag on EDSM systems\n')
     for i, rec in enumerate(sysdb.edsmsysids):
         if rec[1] == i and rec[5] == 0:
             rec.processed -= 1
@@ -3005,9 +2997,9 @@ def process_edsm_systems_with_coords(sysdb, timer, rejectout):
             sys.stderr.write('.')
             sys.stderr.flush()
             if ((i + 1) % 640000) == 0:
-                sys.stderr.write('  {0}\n'.format(i + 1))
+                sys.stderr.write(f'  {i + 1} / {len(sysdb.edsmsysids)}\n')
                 sys.stderr.flush()
-    sys.stderr.write('  {0}\n'.format(len(sysdb.edsmsysids)))
+    sys.stderr.write(f'  {len(sysdb.edsmsysids)} / {len(sysdb.edsmsysids)}\n')
 
     sys.stderr.write('Processing EDSM systems with coords\n')
     with bz2.BZ2File(edsmsyswithcoordsfile, 'r') as f:
@@ -3023,10 +3015,10 @@ def process_edsm_systems_with_coords(sysdb, timer, rejectout):
                 starpos = [coords['x'],coords['y'],coords['z']]
                 timestamp = msg['date'].replace(' ', 'T')
             except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                 rejectmsg = {
                     'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'exception': sys.exc_info()[1],
                     'line': line.decode('utf-8', 'backslashreplace')
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -3066,13 +3058,13 @@ def process_edsm_systems_with_coords(sysdb, timer, rejectout):
                 w = 0
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDSMSys:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDSMSys:{i + 1}')
                     sysdb.save_edsm_sys_cache()
                 timer.time('commit')
                     
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     sysdb.save_edsm_sys_cache()
@@ -3099,10 +3091,10 @@ def process_spansh_systems(sysdb, timer, rejectout):
                     starpos = [coords['x'],coords['y'],coords['z']]
                     timestamp = msg['updateTime'].replace(' ', 'T').replace('+00', 'Z')
                 except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                    sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                    sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                     rejectmsg = {
                         'rejectReason': 'Invalid',
-                        'exception': '{0}'.format(sys.exc_info()[1]),
+                        'exception': str(sys.exc_info()[1]),
                         'line': line.decode('utf-8', 'backslashreplace')
                     }
                     rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -3135,12 +3127,12 @@ def process_spansh_systems(sysdb, timer, rejectout):
                     w = 0
 
                     if ((i + 1) % 64000) == 0:
-                        sys.stderr.write('  {0}\n'.format(i + 1))
+                        sys.stderr.write(f'  {i + 1}\n')
                         sys.stderr.flush()
-                        updatetitleprogress('SpanshSys:{0}'.format(i + 1))
+                        updatetitleprogress(f'SpanshSys:{i + 1}')
                     timer.time('commit')
 
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write('  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     timer.time('commit')
@@ -3158,10 +3150,10 @@ def process_edsm_systems_without_coords(sysdb, timer, rejectout):
                 sysname = msg['name']
                 timestamp = msg['date'].replace(' ', 'T')
             except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                 rejectmsg = {
                     'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'exception': str(sys.exc_info()[1]),
                     'line': line.decode('utf-8', 'backslashreplace')
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -3203,13 +3195,13 @@ def process_edsm_systems_without_coords(sysdb, timer, rejectout):
                 w = 0
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDSMSysNC:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDSMSysNC:{i + 1}')
                     sysdb.save_edsm_sys_cache()
                 timer.time('commit')
                     
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     sysdb.save_edsm_sys_cache()
@@ -3228,10 +3220,10 @@ def process_edsm_systems_without_coords_prepurge(sysdb, timer, rejectout):
                 sysname = msg['name']
                 timestamp = msg['date'].replace(' ', 'T')
             except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                 rejectmsg = {
                     'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'exception': str(sys.exc_info()[1]),
                     'line': line.decode('utf-8', 'backslashreplace')
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -3267,13 +3259,13 @@ def process_edsm_systems_without_coords_prepurge(sysdb, timer, rejectout):
                 w = 0
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDSMSysNCP:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDSMSysNCP:{i + 1}')
                     sysdb.save_edsm_sys_cache()
                 timer.time('commit')
                     
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     sysdb.save_edsm_sys_cache()
@@ -3290,10 +3282,10 @@ def process_edsm_hidden_systems(sysdb, timer, rejectout):
                 edsmsysid = msg['id']
                 sysname = msg['system']
             except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                 rejectmsg = {
                     'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'exception': str(sys.exc_info()[1]),
                     'line': line.decode('utf-8', 'backslashreplace')
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -3318,12 +3310,12 @@ def process_edsm_hidden_systems(sysdb, timer, rejectout):
                 w = 0
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDSMSysHid:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDSMSysHid:{i + 1}')
                 timer.time('commit')
                     
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     sysdb.save_edsm_sys_cache()
@@ -3343,7 +3335,7 @@ def process_edsm_deleted_systems(sysdb, timer, rejectout):
 
     for i, row in enumerate(sysdb.edsmsysids):
         if row[1] == i and row[6] <= 0 and row[5] == 0:
-            sys.stderr.write('{0:10d}'.format(row[1]) + '\b' * 10)
+            sys.stderr.write(f'{row[1]:10d}' + '\b' * 10)
             sys.stderr.flush()
             rec = row
             if not sysdb.update_system_from_edsm_by_id(row[1], timer, rejectout):
@@ -3363,9 +3355,9 @@ def process_edsm_deleted_systems(sysdb, timer, rejectout):
             sys.stderr.flush()
             
             if ((i + 1) % 64000) == 0:
-                sys.stderr.write('  {0}\n'.format(i + 1))
+                sys.stderr.write(f'  {i + 1}\n')
                 sys.stderr.flush()
-                updatetitleprogress('EDSMSysDel:{0}'.format(i + 1))
+                updatetitleprogress(f'EDSMSysDel:{i + 1}')
             
             if w2 >= 10:
                 sysdb.save_edsm_sys_cache()
@@ -3378,7 +3370,7 @@ def process_edsm_deleted_systems(sysdb, timer, rejectout):
             if default_timer() - tstart > 18 * 60 * 60:
                 break
 
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     sysdb.save_edsm_sys_cache()
@@ -3397,10 +3389,10 @@ def process_eddb_systems(sysdb, timer, rejectout):
                 starpos = [float(msg['x']),float(msg['y']),float(msg['z'])]
                 timestamp = int(msg['updated_at'])
             except (OverflowError,ValueError,TypeError):
-                sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[0]))
+                sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                 rejectmsg = {
                     'rejectReason': 'Invalid',
-                    'exception': '{0}'.format(sys.exc_info()[1]),
+                    'exception': str(sys.exc_info()[1]),
                     'data': msg
                 }
                 rejectout.write(json.dumps(rejectmsg) + '\n')
@@ -3434,12 +3426,12 @@ def process_eddb_systems(sysdb, timer, rejectout):
                 w = 0
 
                 if ((i + 1) % 64000) == 0:
-                    sys.stderr.write('  {0}\n'.format(i + 1))
+                    sys.stderr.write(f'  {i + 1}\n')
                     sys.stderr.flush()
-                    updatetitleprogress('EDDBSys:{0}'.format(i + 1))
+                    updatetitleprogress(f'EDDBSys:{i + 1}')
                 timer.time('commit')
                     
-    sys.stderr.write('  {0}\n'.format(i + 1))
+    sys.stderr.write(f'  {i + 1}\n')
     sys.stderr.flush()
     sysdb.commit()
     timer.time('commit')
@@ -3458,8 +3450,8 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
         or (reprocess == True and fileinfo.populatedlinecount != fileinfo.factionlinecount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
-            sys.stderr.write('{0}\n'.format(fn))
-            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.eventtype))
+            sys.stderr.write(f'{fn}\n')
+            updatetitleprogress(f'{fileinfo.date.isoformat()[:10]}:{fileinfo.eventtype}')
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -3522,10 +3514,10 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                         software = hdr.get('softwareName')
                         distfromstar = body.get('DistanceFromArrivalLS')
                     except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                        sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
+                        sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                         msg = {
                             'rejectReason': 'Invalid',
-                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'exception': str(sys.exc_info()[1]),
                             'rawmessage': line.decode('utf-8')
                         }
                         rejectout.write(json.dumps(msg) + '\n')
@@ -3732,7 +3724,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                         sys.stderr.flush()
 
                         if (linecount % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(lineno + 1))
+                            sys.stderr.write(f'  {lineno + 1}\n')
                             sys.stderr.flush()
                 
                 sysdb.commit()
@@ -3759,7 +3751,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
 
                 sysdb.commit()
 
-                sys.stderr.write('  {0}\n'.format(linecount))
+                sys.stderr.write(f'  {linecount}\n')
                 sys.stderr.flush()
                 sysdb.update_file_info(fileinfo.id, linecount, totalsize, comprsize, poplinecount, stnlinecount, 0, 0)
 
@@ -3772,8 +3764,8 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
         or (reprocess == True and fileinfo.routesystemcount != fileinfo.navroutesystemcount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
-            sys.stderr.write('{0}\n'.format(fn))
-            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], fileinfo.eventtype))
+            sys.stderr.write(f'{fn}\n')
+            updatetitleprogress(f'{fileinfo.date.isoformat()[:10]}:{fileinfo.eventtype}')
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -3797,10 +3789,10 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
                         gwtimestamp = hdr.get('gatewayTimestamp')
                         software = hdr.get('softwareName')
                     except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                        sys.stderr.write('Error: {0}\n'.format(sys.exc_info()[1]))
+                        sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                         msg = {
                             'rejectReason': 'Invalid',
-                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'exception': str(sys.exc_info()[1]),
                             'rawmessage': line.decode('utf-8')
                         }
                         rejectout.write(json.dumps(msg) + '\n')
@@ -3894,7 +3886,7 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
                         sys.stderr.flush()
 
                         if (linecount % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(lineno + 1))
+                            sys.stderr.write(f'  {lineno + 1}\n')
                             sys.stderr.flush()
                 
                 sysdb.commit()
@@ -3909,7 +3901,7 @@ def process_eddn_journal_route(sysdb, timer, filename, fileinfo, reprocess, reje
 
                 sysdb.commit()
 
-                sys.stderr.write('  {0}\n'.format(linecount))
+                sys.stderr.write(f'  {linecount}\n')
                 sys.stderr.flush()
                 sysdb.update_file_info(fileinfo.id, linecount, totalsize, comprsize, 0, 0, routesystemcount, 0)
 
@@ -3920,8 +3912,8 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
         or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
-            sys.stderr.write('{0}\n'.format(fn))
-            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], filename.split('-')[0]))
+            sys.stderr.write(f'{fn}\n')
+            updatetitleprogress(f'{fileinfo.date.isoformat()[:10]}:{filename.split("-")[0]}')
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -3955,10 +3947,10 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                         modules = body.get('modules')
                         ships = body.get('ships')
                     except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                        print('Error: {0}'.format(sys.exc_info()[1]))
+                        sys.stderr.write(f'Error: {sys.exc_info()[0]}\n')
                         msg = {
                             'rejectReason': 'Invalid',
-                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'exception': str(sys.exc_info()[1]),
                             'rawmessage': line.decode('utf-8')
                         }
                         rejectout.write(json.dumps(msg) + '\n')
@@ -4100,7 +4092,7 @@ def process_eddn_market_file(sysdb, timer, filename, fileinfo, reprocess, reject
                         sys.stderr.flush()
 
                         if (linecount % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(lineno + 1))
+                            sys.stderr.write(f'  {lineno + 1}\n')
                             sys.stderr.flush()
 
                 sysdb.commit()
@@ -4125,8 +4117,8 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
         or (reprocess == True and fileinfo.marketsetcount != fileinfo.marketitemsetcount)):
         fn = eddndir + '/' + fileinfo.date.isoformat()[:7] + '/' + filename
         if os.path.exists(fn):
-            sys.stderr.write('{0}\n'.format(fn))
-            updatetitleprogress('{0}:{1}'.format(fileinfo.date.isoformat()[:10], filename.split('-')[0]))
+            sys.stderr.write(f'{fn}\n')
+            updatetitleprogress(f'{fileinfo.date.isoformat()[:10]}:{filename.split("-")[0]}')
             statinfo = os.stat(fn)
             comprsize = statinfo.st_size
             with bz2.BZ2File(fn, 'r') as f:
@@ -4156,10 +4148,10 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                         software = hdr.get('softwareName')
                         fcitems = body.get('Items')
                     except (OverflowError,ValueError,TypeError,json.JSONDecodeError):
-                        print('Error: {0}'.format(sys.exc_info()[1]))
+                        sys.stderr.write(f'Error: {sys.exc_info()[1]}\n')
                         msg = {
                             'rejectReason': 'Invalid',
-                            'exception': '{0}'.format(sys.exc_info()[1]),
+                            'exception': str(sys.exc_info()[1]),
                             'rawmessage': line.decode('utf-8')
                         }
                         rejectout.write(json.dumps(msg) + '\n')
@@ -4245,7 +4237,7 @@ def process_eddn_fcmaterials(sysdb, timer, filename, fileinfo, reprocess, reject
                         sys.stderr.flush()
 
                         if (linecount % 64000) == 0:
-                            sys.stderr.write('  {0}\n'.format(lineno + 1))
+                            sys.stderr.write(f'  {lineno + 1}\n')
                             sys.stderr.flush()
                 
                 sysdb.commit()
