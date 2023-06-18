@@ -2266,7 +2266,7 @@ class EDDNSysDB(object):
         )
 
     def add_edsm_file_line_systems(self, linelist):
-        values = [(fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked) for fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked in linelist]
+        values = [(fileid, lineno, edsmsysid, sysid, timestamp.isoformat(sep=' '), hascoords, coordslocked) for fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked in linelist]
         self.conn.cursor().executemany(
             'INSERT INTO EDSMFileLineSystems ' +
             '(FileId, LineNo, EdsmSystemId, SystemId, Timestamp, HasCoords, CoordsLocked) VALUES ' +
