@@ -3629,7 +3629,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                                         1 if 'MarketID' in body else 0
                                     )]
 
-                                if (lineno + 1) not in bodylines and not rejectbody:
+                                if (lineno + 1) not in bodylines and sysbodyid is not None and not rejectbody:
                                     bodiestoinsert += [(
                                         fileinfo.id,
                                         lineno + 1,
