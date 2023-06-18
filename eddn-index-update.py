@@ -2997,11 +2997,19 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
             sysdb.update_edsm_system_file_info(fileinfo.id, linecount, totalsize, comprsize)
 
 def process_edsm_systems_with_coords(sysdb, timer, rejectout):
-    sys.stderr.write('Processing EDSM systems with coords\n')
+    sys.stderr.write('Clearing processed flag on EDSM systems')
     for i, rec in enumerate(sysdb.edsmsysids):
         if rec[1] == i and rec[5] == 0:
             rec.processed -= 1
+        if ((i + 1) % 10000) == 0:
+            sys.stderr.write('.')
+            sys.stderr.flush()
+            if ((i + 1) % 640000) == 0:
+                sys.stderr.write('  {0}\n'.format(i + 1))
+                sys.stderr.flush()
+    sys.stderr.write('  {0}\n'.format(len(sysdb.edsmsysids)))
 
+    sys.stderr.write('Processing EDSM systems with coords\n')
     with bz2.BZ2File(edsmsyswithcoordsfile, 'r') as f:
         w = 0
         for i, line in enumerate(f):
