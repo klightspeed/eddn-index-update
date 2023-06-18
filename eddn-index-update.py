@@ -2940,6 +2940,7 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
                         else:
                             sqltimestamp = timestamp_to_sql(timestamp)
                             timer.time('parse')
+                            sysid = None
 
                             if starpos is not None:
                                 starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
