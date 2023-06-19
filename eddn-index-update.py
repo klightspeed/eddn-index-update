@@ -2694,7 +2694,7 @@ def process_edsm_bodies(sysdb, filename, fileinfo, reprocess, timer, rejectout):
             or fileinfo.linecount is None
             or (reprocess == True and fileinfo.linecount != fileinfo.bodylinecount)):
             
-            sys.stderr.write(f'Processing EDSM bodies file {filename} ({fileinfo.bodylinecount} / {fileinfo.linecount})\n')
+            sys.stderr.write(f'Processing EDSM bodies file {filename}\n')
 
             lines = sysdb.get_edsm_body_file_lines(fileinfo.id)
             linecount = 0
@@ -2904,9 +2904,9 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
         
         if ((fileinfo.date is None and comprsize != fileinfo.comprsize)
             or fileinfo.linecount is None
-            or (reprocess == True and fileinfo.linecount != fileinfo.bodylinecount)):
+            or (reprocess == True and fileinfo.linecount != fileinfo.systemlinecount)):
             
-            sys.stderr.write(f'Processing EDSM systems file {filename} ({fileinfo.systemlinecount} / {fileinfo.linecount})\n')
+            sys.stderr.write(f'Processing EDSM systems file {filename}\n')
 
             lines = sysdb.get_edsm_system_file_lines(fileinfo.id)
             linecount = 0
