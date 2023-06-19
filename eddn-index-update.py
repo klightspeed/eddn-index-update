@@ -2943,19 +2943,21 @@ def process_edsm_systems(sysdb, filename, fileinfo, reprocess, timer, rejectout)
                             sysid = None
 
                             if starpos is not None:
-                                starpos = [ math.floor(v * 32 + 0.5) / 32.0 for v in starpos ]
                                 (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, starpos[0], starpos[1], starpos[2], sysaddr)
-                                timer.time('sysquery', 0)
+                            else:
+                                (system, rejectReason, rejectData) = sysdb.get_system(timer, sysname, None, None, None, sysaddr)
 
-                                if system is not None:
-                                    sysid = system.id
-                                else:
-                                    rejectmsg = {
-                                        'rejectReason': rejectReason,
-                                        'rejectData': rejectData,
-                                        'data': msg
-                                    }
-                                    rejectout.write(json.dumps(rejectmsg) + '\n')
+                            timer.time('sysquery', 0)
+
+                            if system is not None:
+                                sysid = system.id
+                            else:
+                                rejectmsg = {
+                                    'rejectReason': rejectReason,
+                                    'rejectData': rejectData,
+                                    'data': msg
+                                }
+                                rejectout.write(json.dumps(rejectmsg) + '\n')
                             
                             systemstoinsert += [(fileinfo.id, lineno + 1, edsmsysid, sysid, sqltimestamp, coords is not None, coordslocked)]
 
