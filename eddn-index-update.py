@@ -936,6 +936,16 @@ class EDDNSysDB(object):
                     z2 = z0 >> sx
                     modsysaddr = (z2 << 53) | (y2 << 47) | (x2 << 40) | (sz << 37) | (z1 << 30) | (y1 << 23) | (x1 << 16) | seq
                 elif ri.regionaddr is not None:
+                    if rx > sb or ry > sb or rz > sb:
+                        errmsg = f"System name {sysname} is outside bounds of region {ri.name}"
+                        sys.stderr.write(errmsg)
+                        sys.stderr.writelines(['{0}\n'.format(s) for s in systems])
+                        return (
+                            None,
+                            'System name outside region bounds',
+                            self.get_reject_data(sysname, sysaddr, systems)
+                        )
+
                     modsysaddr = (ri.regionaddr << 40) | (sz << 37) | (mid << 16) | seq
 
                 timer.time('sysquerypgre')
