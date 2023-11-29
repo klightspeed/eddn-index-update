@@ -4376,8 +4376,11 @@ def main():
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype not in ('NavRoute', 'FCMaterials'):
                         reprocessall = (args.reprocessall
-                            or (args.reprocess_all_since is not None
-                                and fileinfo.date >= args.reprocess_all_since
+                            or (
+                                (args.reprocess_all_since is not None
+                                    or len(args.reprocess_all_events) > 0)
+                                and (args.reprocess_all_since is None
+                                     or fileinfo.date >= args.reprocess_all_since)
                                 and (len(args.reprocess_all_events) == 0
                                      or fileinfo.eventtype in args.reprocess_all_events)
                             )
