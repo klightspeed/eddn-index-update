@@ -218,12 +218,15 @@ class EDDNRejectData(object):
 
         if 'rejectReason' in j and j['rejectReason'] is not None:
             reason = j['rejectReason']
-            if reason.startswith('Unable to resolve system '):
-                reason = 'Unable to resolve system'
-
-            rejectfile += '/' + reason
+        elif 'reject' in j and len(j['reject']) > 0 and 'reason' in j['reject'][0] and j['reject'][0]['reason'] is not None:
+            reason = j['reject'][0]['reason']
         else:
-            rejectfile += '/None'
+            reason = 'None'
+
+        if reason.startswith('Unable to resolve system '):
+            reason = 'Unable to resolve system'
+
+        rejectfile += '/' + reason
 
         if 'header' in j and 'gatewayTimestamp' in j['header']:
             date = j['header']['gatewayTimestamp'][:10]
