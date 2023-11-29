@@ -4387,9 +4387,12 @@ def main():
                         )
 
                         reprocess = (args.reprocess
-                            or args.reprocessall
-                            or (args.reprocess_since is not None
-                                and fileinfo.date >= args.reprocess_since
+                            or reprocessall
+                            or (
+                                (args.reprocess_since is not None
+                                    or len(args.reprocess_events) > 0)
+                                and (args.reprocess_since is None
+                                     or fileinfo.date >= args.reprocess_since)
                                 and (len(args.reprocess_events) == 0
                                      or fileinfo.eventtype in args.reprocess_events)
                             )
@@ -4399,10 +4402,24 @@ def main():
             if args.navroute:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype == 'NavRoute':
+                        reprocessall = (args.reprocessall
+                            or (
+                                (args.reprocess_all_since is not None
+                                    or len(args.reprocess_all_events) > 0)
+                                and (args.reprocess_all_since is None
+                                     or fileinfo.date >= args.reprocess_all_since)
+                                and (len(args.reprocess_all_events) == 0
+                                     or fileinfo.eventtype in args.reprocess_all_events)
+                            )
+                        )
+
                         reprocess = (args.reprocess
-                            or args.reprocessall
-                            or (args.reprocess_since is not None
-                                and fileinfo.date >= args.reprocess_since
+                            or reprocessall
+                            or (
+                                (args.reprocess_since is not None
+                                    or len(args.reprocess_events) > 0)
+                                and (args.reprocess_since is None
+                                     or fileinfo.date >= args.reprocess_since)
                                 and (len(args.reprocess_events) == 0
                                      or fileinfo.eventtype in args.reprocess_events)
                             )
@@ -4412,10 +4429,24 @@ def main():
             if args.fcmaterials:
                 for filename, fileinfo in files.items():
                     if fileinfo.eventtype is not None and fileinfo.eventtype == "FCMaterials":
+                        reprocessall = (args.reprocessall
+                            or (
+                                (args.reprocess_all_since is not None
+                                    or len(args.reprocess_all_events) > 0)
+                                and (args.reprocess_all_since is None
+                                     or fileinfo.date >= args.reprocess_all_since)
+                                and (len(args.reprocess_all_events) == 0
+                                     or fileinfo.eventtype in args.reprocess_all_events)
+                            )
+                        )
+
                         reprocess = (args.reprocess
-                            or args.reprocessall
-                            or (args.reprocess_since is not None
-                                and fileinfo.date >= args.reprocess_since
+                            or reprocessall
+                            or (
+                                (args.reprocess_since is not None
+                                    or len(args.reprocess_events) > 0)
+                                and (args.reprocess_since is None
+                                     or fileinfo.date >= args.reprocess_since)
                                 and (len(args.reprocess_events) == 0
                                      or fileinfo.eventtype in args.reprocess_events)
                             )
