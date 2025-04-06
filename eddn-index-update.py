@@ -141,17 +141,125 @@ ed332date = datetime.strptime('2019-01-17 10:00:00', '%Y-%m-%d %H:%M:%S')
 ed370date = datetime.strptime('2020-06-09 10:00:00', '%Y-%m-%d %H:%M:%S')
 ed400date = datetime.strptime('2021-05-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 
-EDDNSystem = namedtuple('EDDNSystem', ['id', 'id64', 'name', 'x', 'y', 'z', 'hascoords'])
-EDDNStation = namedtuple('EDDNStation', ['id', 'marketid', 'name', 'systemname', 'systemid', 'type', 'loctype', 'body', 'bodyid', 'isrejected', 'validfrom', 'validuntil', 'test'])
-EDDNFile = namedtuple('EDDNFile', ['id', 'name', 'date', 'eventtype', 'linecount', 'stnlinecount', 'infolinecount', 'bodylinecount', 'factionlinecount', 'navroutesystemcount', 'marketitemsetcount', 'populatedlinecount', 'stationlinecount', 'routesystemcount', 'marketsetcount', 'test'])
-EDDNRegion = namedtuple('EDDNRegion', ['id', 'name', 'x0', 'y0', 'z0', 'sizex', 'sizey', 'sizez', 'regionaddr', 'isharegion'])
-EDDNBody = namedtuple('EDDNBody', ['id', 'name', 'systemname', 'systemid', 'bodyid', 'category', 'argofperiapsis', 'validfrom', 'validuntil', 'isrejected'])
-EDDNFaction = namedtuple('EDDNFaction', ['id', 'name', 'government', 'allegiance'])
-EDDNMarketStation = namedtuple('EDDNMarketStation', ['id', 'marketid', 'name', 'systemname', 'isrejected', 'validfrom', 'validuntil'])
-EDDNMarketItem = namedtuple('EDDNMarketItem', ['id', 'name', 'type'])
-EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', ['id', 'marketstationid', 'type', 'itemcount', 'itemshash'])
-EDSMBodyFile = namedtuple('EDSMBodyFile', ['id', 'name', 'date', 'linecount', 'bodylinecount', 'comprsize'])
-EDSMSystemFile = namedtuple('EDSMSystemFile', ['id', 'name', 'date', 'linecount', 'systemlinecount', 'comprsize'])
+EDDNSystem = namedtuple('EDDNSystem', [
+    'id',
+    'id64',
+    'name',
+    'x',
+    'y',
+    'z',
+    'hascoords'
+])
+
+EDDNStation = namedtuple('EDDNStation', [
+    'id',
+    'marketid',
+    'name',
+    'systemname',
+    'systemid',
+    'type',
+    'loctype',
+    'body',
+    'bodyid',
+    'isrejected',
+    'validfrom',
+    'validuntil',
+    'test'
+])
+
+EDDNFile = namedtuple('EDDNFile', [
+    'id',
+    'name',
+    'date',
+    'eventtype',
+    'linecount',
+    'stnlinecount',
+    'infolinecount',
+    'bodylinecount',
+    'factionlinecount',
+    'navroutesystemcount',
+    'marketitemsetcount',
+    'populatedlinecount',
+    'stationlinecount',
+    'routesystemcount',
+    'marketsetcount',
+    'test'
+])
+
+EDDNRegion = namedtuple('EDDNRegion', [
+    'id',
+    'name',
+    'x0',
+    'y0',
+    'z0',
+    'sizex',
+    'sizey',
+    'sizez',
+    'regionaddr',
+    'isharegion'
+])
+
+EDDNBody = namedtuple('EDDNBody', [
+    'id',
+    'name',
+    'systemname',
+    'systemid',
+    'bodyid',
+    'category',
+    'argofperiapsis',
+    'validfrom',
+    'validuntil',
+    'isrejected'
+])
+
+EDDNFaction = namedtuple('EDDNFaction', [
+    'id',
+    'name',
+    'government',
+    'allegiance'
+])
+
+EDDNMarketStation = namedtuple('EDDNMarketStation', [
+    'id',
+    'marketid',
+    'name',
+    'systemname',
+    'isrejected',
+    'validfrom',
+    'validuntil'
+])
+
+EDDNMarketItem = namedtuple('EDDNMarketItem', [
+    'id',
+    'name',
+    'type'
+])
+
+EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', [
+    'id',
+    'marketstationid',
+    'type',
+    'itemcount',
+    'itemshash'
+])
+
+EDSMBodyFile = namedtuple('EDSMBodyFile', [
+    'id',
+    'name',
+    'date',
+    'linecount',
+    'bodylinecount',
+    'comprsize'
+])
+
+EDSMSystemFile = namedtuple('EDSMSystemFile', [
+    'id',
+    'name',
+    'date',
+    'linecount',
+    'systemlinecount',
+    'comprsize'
+])
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
 argparser.add_argument('--reprocess', dest='reprocess', action='store_const', const=True, default=False, help='Reprocess files with unprocessed entries')
