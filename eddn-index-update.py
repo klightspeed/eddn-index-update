@@ -8,15 +8,15 @@ import bz2
 import gzip
 import edts.edtslib.system as edtslib_system
 import edts.edtslib.id64data as edtslib_id64data
-import glob
 import math
 from functools import lru_cache
-from collections import namedtuple
-from timeit import default_timer as timer
+from dataclasses import dataclass
+import dataclasses
+import timeit
 import re
 import numpy
 import numpy.core.records
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import time
 import argparse
 import csv
@@ -141,125 +141,125 @@ ed332date = datetime.strptime('2019-01-17 10:00:00', '%Y-%m-%d %H:%M:%S')
 ed370date = datetime.strptime('2020-06-09 10:00:00', '%Y-%m-%d %H:%M:%S')
 ed400date = datetime.strptime('2021-05-19 10:00:00', '%Y-%m-%d %H:%M:%S')
 
-EDDNSystem = namedtuple('EDDNSystem', [
-    'id',
-    'id64',
-    'name',
-    'x',
-    'y',
-    'z',
-    'hascoords'
-])
+@dataclass
+class EDDNSystem:
+    id: int
+    id64: int
+    name: str
+    x: float
+    y: float
+    z: float
+    hascoords: bool
 
-EDDNStation = namedtuple('EDDNStation', [
-    'id',
-    'marketid',
-    'name',
-    'systemname',
-    'systemid',
-    'type',
-    'loctype',
-    'body',
-    'bodyid',
-    'isrejected',
-    'validfrom',
-    'validuntil',
-    'test'
-])
+@dataclass
+class EDDNStation:
+    id: int
+    marketid: int
+    name: str
+    systemname: str
+    systemid: int
+    type: str
+    loctype: str
+    body: str | None
+    bodyid: int | None
+    isrejected: bool
+    validfrom: datetime
+    validuntil: datetime
+    test: bool
 
-EDDNFile = namedtuple('EDDNFile', [
-    'id',
-    'name',
-    'date',
-    'eventtype',
-    'linecount',
-    'stnlinecount',
-    'infolinecount',
-    'bodylinecount',
-    'factionlinecount',
-    'navroutesystemcount',
-    'marketitemsetcount',
-    'populatedlinecount',
-    'stationlinecount',
-    'routesystemcount',
-    'marketsetcount',
-    'test'
-])
+@dataclass
+class EDDNFile:
+    id: int
+    name: str
+    date: str
+    eventtype: str
+    linecount: int
+    stnlinecount: int
+    infolinecount: int
+    bodylinecount: int
+    factionlinecount: int
+    navroutesystemcount: int
+    marketitemsetcount: int
+    populatedlinecount: int
+    stationlinecount: int
+    routesystemcount: int
+    marketsetcount: int
+    test: bool
 
-EDDNRegion = namedtuple('EDDNRegion', [
-    'id',
-    'name',
-    'x0',
-    'y0',
-    'z0',
-    'sizex',
-    'sizey',
-    'sizez',
-    'regionaddr',
-    'isharegion'
-])
+@dataclass
+class EDDNRegion:
+    id: int
+    name: str
+    x0: float
+    y0: float
+    z0: float
+    sizex: float
+    sizey: float
+    sizez: float
+    regionaddr: int
+    isharegion: bool
 
-EDDNBody = namedtuple('EDDNBody', [
-    'id',
-    'name',
-    'systemname',
-    'systemid',
-    'bodyid',
-    'category',
-    'argofperiapsis',
-    'validfrom',
-    'validuntil',
-    'isrejected'
-])
+@dataclass
+class EDDNBody:
+    id: int
+    name: str
+    systemname: str
+    systemid: int
+    bodyid: int | None
+    category: str | None
+    argofperiapsis: float | None
+    validfrom: datetime | None
+    validuntil: datetime | None
+    isrejected: bool
 
-EDDNFaction = namedtuple('EDDNFaction', [
-    'id',
-    'name',
-    'government',
-    'allegiance'
-])
+@dataclass
+class EDDNFaction:
+    id: int
+    name: str
+    government: str
+    allegiance: str
 
-EDDNMarketStation = namedtuple('EDDNMarketStation', [
-    'id',
-    'marketid',
-    'name',
-    'systemname',
-    'isrejected',
-    'validfrom',
-    'validuntil'
-])
+@dataclass
+class EDDNMarketStation:
+    id: int
+    marketid: int
+    name: str
+    systemname: str
+    isrejected: bool
+    validfrom: datetime
+    validuntil: datetime
 
-EDDNMarketItem = namedtuple('EDDNMarketItem', [
-    'id',
-    'name',
-    'type'
-])
+@dataclass
+class EDDNMarketItem:
+    id: int
+    name: str
+    type: str
 
-EDDNMarketItemSet = namedtuple('EDDNMarketItemSet', [
-    'id',
-    'marketstationid',
-    'type',
-    'itemcount',
-    'itemshash'
-])
+@dataclass
+class EDDNMarketItemSet:
+    id: int
+    marketstationid: int
+    type: str | None
+    itemcount: int | None
+    itemshash: str | list[str] | None
 
-EDSMBodyFile = namedtuple('EDSMBodyFile', [
-    'id',
-    'name',
-    'date',
-    'linecount',
-    'bodylinecount',
-    'comprsize'
-])
+@dataclass
+class EDSMBodyFile:
+    id: int
+    name: str
+    date: str
+    linecount: int
+    bodylinecount: int
+    comprsize: int
 
-EDSMSystemFile = namedtuple('EDSMSystemFile', [
-    'id',
-    'name',
-    'date',
-    'linecount',
-    'systemlinecount',
-    'comprsize'
-])
+@dataclass
+class EDSMSystemFile:
+    id: int
+    name: str
+    date: str
+    linecount: int
+    systemlinecount: int
+    comprsize: int
 
 argparser = argparse.ArgumentParser(description='Index EDDN data into database')
 argparser.add_argument('--reprocess', dest='reprocess', action='store_const', const=True, default=False, help='Reprocess files with unprocessed entries')
@@ -363,37 +363,37 @@ class EDDNSysDB(object):
         self.edsmsysids = None
         self.edsmbodyids = None
         self.eddbsysids = None
+        timer = Timer({
+            'sql',
+            'sql_name',
+            'sql_region',
+            'sql_body_name',
+            'sql_edsm_sys',
+            'sql_edsm_body',
+            'sql_eddb_sys',
+            'sql_parents',
+            'sql_software',
+            'sql_body_desigs',
+            'sql_factions',
+            'sql_market_items',
+            'sql_market_item_sets',
+            'load',
+            'load_name',
+            'load_region',
+            'load_body_name',
+            'load_edsm_sys',
+            'load_edsm_body',
+            'load_eddb_sys',
+            'load_parents',
+            'load_software',
+            'load_body_desigs',
+            'load_factions',
+            'load_market_items',
+            'load_market_item_sets',
+            'load_known_bodies'
+        })
 
         try:
-            timer = Timer({
-                'sql',
-                'sql_name',
-                'sql_region',
-                'sql_body_name',
-                'sql_edsm_sys',
-                'sql_edsm_body',
-                'sql_eddb_sys',
-                'sql_parents',
-                'sql_software',
-                'sql_body_desigs',
-                'sql_factions',
-                'sql_market_items',
-                'sql_market_item_sets',
-                'load',
-                'load_name',
-                'load_region',
-                'load_body_name',
-                'load_edsm_sys',
-                'load_edsm_body',
-                'load_eddb_sys',
-                'load_parents',
-                'load_software',
-                'load_body_desigs',
-                'load_factions',
-                'load_market_items',
-                'load_market_item_sets',
-                'load_known_bodies'
-            })
             self.load_regions(conn, timer)
             self.load_named_systems(conn, timer)
             self.load_named_bodies(conn, timer)
@@ -798,7 +798,7 @@ class EDDNSysDB(object):
                     vz = int((starpos[2] + 24105) * 32)
                     c = self.conn.cursor()
                     c.execute('UPDATE Systems SET X = %s, Y = %s, Z = %s WHERE Id = %s', (vx, vy, vz, system.id))
-                    system = system._replace(x = starpos[0], y = starpos[1], z = starpos[2], hascoords = True)
+                    system = dataclasses.replace(system, x = starpos[0], y = starpos[1], z = starpos[2], hascoords = True)
 
                 return system
 
@@ -1251,7 +1251,7 @@ class EDDNSysDB(object):
                 c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress >= %s AND ModSystemAddress < %s', (baddr,baddr + 65536))
                 for row in c:
                     if row[3] >= vx - 2 and row[3] <= vx + 2 and row[4] >= vy - 2 and row[4] <= vy + 2 and row[5] >= vz - 2 and row[5] <= vz + 2:
-                        systems.append(
+                        systems.add(
                             EDDNSystem(
                                 row[0],
                                 row[1],
@@ -1855,7 +1855,7 @@ class EDDNSysDB(object):
                 cursor = self.conn.cursor()
                 cursor.execute('UPDATE SystemBodies SET HasBodyId = 1, BodyID = %s WHERE Id = %s', (bodyid, row[0]))
                 timer.time('bodyupdateid')
-            return (EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body.get('Periapsis')), None, None, 0), None, None)
+            return (EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body.get('Periapsis')), None, None, False), None, None)
         elif len(rows) > 1:
             return (
                 None,
@@ -1924,7 +1924,7 @@ class EDDNSysDB(object):
                      (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
                 )
                 timer.time('bodyinsertpg')
-                return (EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, 0), None, None)
+                return (EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, False), None, None)
 
             if (not ispgname and pgsysre.match(name)) or desigid is None:
                 allrows = []
@@ -1999,7 +1999,7 @@ class EDDNSysDB(object):
             )
             '''
 
-            return (EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, 1), None, None)
+            return (EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, True), None, None)
 
     def get_faction(self, timer, name, government, allegiance):
         factions = None
@@ -2684,12 +2684,12 @@ class EDDNSysDB(object):
 
 class Timer(object):
     def __init__(self, names):
-        self.tstart = timer()
+        self.tstart = timeit.default_timer()
         self.timers = {n: 0 for n in names}
         self.counts = {n: 0 for n in names}
 
     def time(self, name, count = 1):
-        tend = timer()
+        tend = timeit.default_timer()
         self.timers[name] += tend - self.tstart
         self.counts[name] += count
         self.tstart = tend
@@ -2719,7 +2719,7 @@ def process_edsm_missing_bodies(sysdb, timer):
     from timeit import default_timer
     tstart = default_timer()
 
-    fn = f'fetchbodies-{datetime.utcnow().isoformat()}.jsonl'
+    fn = f'fetchbodies-{datetime.now(UTC).isoformat()}.jsonl'
     fileid = sysdb.insert_edsm_file(fn)
 
     timer.time('bodyquery')
@@ -3502,7 +3502,7 @@ def process_edsm_deleted_systems(sysdb, timer, rejectout):
             w2 += 1
 
             if w >= 50:
-                import pdb; pdb.set_trace();
+                import pdb; pdb.set_trace()
 
         if ((i + 1) % 1000) == 0:
             sysdb.commit()
