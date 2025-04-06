@@ -598,14 +598,21 @@ class EDDNSysDB(object):
         knownbodies = {}
 
         with urllib.request.urlopen(knownbodiessheeturi) as f:
-            for line in f:
-                fields = line.decode('utf-8').strip().split('\t')
-                if len(fields) >= 7 and fields[0] != 'SystemAddress' and fields[0] != '' and fields[3] != '' and fields[4] != '' and fields[6] != '':
-                    sysaddr = int(fields[0])
-                    sysname = fields[2]
-                    bodyid = int(fields[3])
-                    bodyname = fields[4]
-                    bodydesig = fields[6]
+            lines = [line.decode('utf-8').strip().split('\t') for line in f]
+            headers = {n: i for i, n in enumerate(lines[0])}
+            sysaddrcol = headers['SystemAddress']
+            sysnamecol = headers['System Name']
+            bodyidcol = headers['BodyID']
+            bodynamecol = headers['Body Name']
+            bodydesigcol = headers['Canonical Body Name']
+
+            for fields in lines[1:]:
+                if len(fields) > bodydesigcol and fields[sysaddrcol] != '' and fields[bodyidcol] != '' and fields[bodydesigcol] != '':
+                    sysaddr = int(fields[sysaddrcol])
+                    sysname = fields[sysnamecol]
+                    bodyid = int(fields[bodyidcol])
+                    bodyname = fields[bodynamecol]
+                    bodydesig = fields[bodydesigcol]
                     desig = bodydesig[len(sysname):]
 
                     if desig not in self.bodydesigs:
@@ -3575,7 +3582,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                         sysbodyid = None
                         linelen = len(line)
 
-                        if factions is not None or sysfaction is not None or stnfaction is not None:
+                        if (factions is not None and len(factions) != 0) or (sysfaction is not None and len(sysfaction) != 0) or (stnfaction is not None and len(stnfaction) != 0):
                             poplinecount += 1
 
                         if stationname is not None or marketid is not None:
@@ -3703,12 +3710,12 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                                         for n, faction in enumerate(factions):
                                             linefactiondata.append({
                                                 'Name': faction['Name'],
-                                                'Government': faction['Government'],
+                                                'Government': faction.get('Government'),
                                                 'Allegiance': faction.get('Allegiance'),
                                                 'EntryNum': n
                                             })
-                                            linefactions.append((n, sysdb.get_faction(timer, faction['Name'], faction['Government'], faction.get('Allegiance'))))
-                                    if sysfaction is not None:
+                                            linefactions.append((n, sysdb.get_faction(timer, faction['Name'], faction.get('Government'), faction.get('Allegiance'))))
+                                    if sysfaction is not None and len(sysfaction) != 0:
                                         if type(sysfaction) is dict and 'Name' in sysfaction:
                                             sysfaction = sysfaction['Name']
                                         linefactiondata.append({
@@ -3718,7 +3725,7 @@ def process_eddn_journal_file(sysdb, timer, filename, fileinfo, reprocess, repro
                                             'EntryNum': -1
                                         })
                                         linefactions.append((-1, sysdb.get_faction(timer, sysfaction, sysgovern, sysalleg)))
-                                    if stnfaction is not None:
+                                    if stnfaction is not None and len(stnfaction) != 0:
                                         if type(stnfaction) is dict and 'Name' in stnfaction:
                                             stnfaction = stnfaction['Name']
                                         if stnfaction != 'FleetCarrier':
