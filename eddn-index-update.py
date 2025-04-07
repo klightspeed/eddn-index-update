@@ -490,7 +490,10 @@ class EDDNSysDB(object):
 
     def load_edsm_systems(self, conn: DBAPIConnection, timer: Timer):
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT MAX(EdsmId) FROM Systems_EDSM')
+        c.execute('''
+            SELECT MAX(EdsmId)
+            FROM Systems_EDSM
+        ''')
         row = c.fetchone()
         maxedsmsysid: int = row[0]
 
@@ -511,7 +514,16 @@ class EDDNSysDB(object):
 
             if self.edsmsysids is None:
                 c = mysql.makestreamingcursor(conn)
-                c.execute('SELECT Id, EdsmId, TimestampSeconds, HasCoords, IsHidden, IsDeleted FROM Systems_EDSM')
+                c.execute('''
+                    SELECT
+                        Id,
+                        EdsmId,
+                        TimestampSeconds,
+                        HasCoords,
+                        IsHidden,
+                        IsDeleted
+                    FROM Systems_EDSM
+                ''')
 
                 edsmsysarray = numpy.zeros(maxedsmsysid + 1048576, dtype=[('sysid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4'), ('hascoords', 'i1'), ('ishidden', 'i1'), ('isdeleted', 'i1'), ('processed', 'i1')])
                 self.edsmsysids = edsmsysarray.view(numpy.core.records.recarray)
@@ -549,7 +561,10 @@ class EDDNSysDB(object):
 
     def load_eddb_systems(self, conn: DBAPIConnection, timer: Timer):
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT MAX(EddbId) FROM Systems_EDDB')
+        c.execute('''
+            SELECT MAX(EddbId)
+            FROM Systems_EDDB
+        ''')
         row = c.fetchone()
         maxeddbsysid = row[0]
 
@@ -558,7 +573,13 @@ class EDDNSysDB(object):
         if maxeddbsysid:
             sys.stderr.write('Loading EDDB System IDs\n')
             c = mysql.makestreamingcursor(conn)
-            c.execute('SELECT Id, EddbId, TimestampSeconds FROM Systems_EDDB')
+            c.execute('''
+                SELECT
+                    Id,
+                    EddbId,
+                    TimestampSeconds
+                FROM Systems_EDDB
+            ''')
 
             eddbsysarray = numpy.zeros(maxeddbsysid + 1048576, dtype=[('sysid', '<i4'), ('eddbid', '<i4'), ('timestampseconds', '<i4')])
             self.eddbsysids = eddbsysarray.view(numpy.core.records.recarray)
@@ -589,7 +610,10 @@ class EDDNSysDB(object):
 
     def load_edsm_bodies(self, conn: DBAPIConnection, timer: Timer):
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT MAX(EdsmId) FROM SystemBodies_EDSM')
+        c.execute('''
+            SELECT MAX(EdsmId)
+            FROM SystemBodies_EDSM
+        ''')
         row = c.fetchone()
         maxedsmbodyid = row[0]
 
@@ -610,7 +634,13 @@ class EDDNSysDB(object):
 
             if self.edsmbodyids is None:
                 c = mysql.makestreamingcursor(conn)
-                c.execute('SELECT Id, EdsmId, TimestampSeconds FROM SystemBodies_EDSM')
+                c.execute('''
+                    SELECT
+                        Id,
+                        EdsmId,
+                        TimestampSeconds
+                    FROM SystemBodies_EDSM
+                ''')
 
                 edsmbodyarray = numpy.zeros(maxedsmbodyid + 1048576, dtype=[('bodyid', '<i4'), ('edsmid', '<i4'), ('timestampseconds', '<i4')])
                 self.edsmbodyids = edsmbodyarray.view(numpy.core.records.recarray)
@@ -642,7 +672,13 @@ class EDDNSysDB(object):
     def load_parent_sets(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Parent Sets\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, BodyID, ParentJson FROM ParentSets')
+        c.execute('''
+            SELECT
+                Id,
+                BodyID,
+                ParentJson
+            FROM ParentSets
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_parents', len(rows))
@@ -653,7 +689,12 @@ class EDDNSysDB(object):
     def load_software(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Software\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, Name FROM Software')
+        c.execute('''
+            SELECT
+                Id,
+                Name
+            FROM Software
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_software', len(rows))
@@ -664,7 +705,13 @@ class EDDNSysDB(object):
     def load_body_desigs(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Body Designations\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, BodyDesignation FROM SystemBodyDesignations WHERE IsUsed = 1')
+        c.execute('''
+            SELECT
+                Id,
+                BodyDesignation
+            FROM SystemBodyDesignations
+            WHERE IsUsed = 1
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_body_desigs', len(rows))
@@ -675,7 +722,22 @@ class EDDNSysDB(object):
     def load_named_bodies(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Named Bodies\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT nb.Id, nb.BodyName, nb.SystemName, nb.SystemId, nb.BodyID, nb.BodyCategory, nb.ArgOfPeriapsis, nb.ValidFrom, nb.ValidUntil, nb.IsRejected FROM SystemBodyNames nb JOIN SystemBodies_Named sbn ON sbn.Id = nb.Id')
+        c.execute('''
+            SELECT
+                nb.Id,
+                nb.BodyName,
+                nb.SystemName,
+                nb.SystemId,
+                nb.BodyID,
+                nb.BodyCategory,
+                nb.ArgOfPeriapsis,
+                nb.ValidFrom,
+                nb.ValidUntil,
+                nb.IsRejected
+            FROM SystemBodyNames nb
+            JOIN SystemBodies_Named sbn
+                ON sbn.Id = nb.Id
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_body_name', len(rows))
@@ -696,7 +758,18 @@ class EDDNSysDB(object):
     def load_named_systems(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Named Systems\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns JOIN Systems_Named sn ON sn.Id = ns.Id')
+        c.execute('''
+            SELECT
+                ns.Id,
+                ns.SystemAddress,
+                ns.Name,
+                ns.X,
+                ns.Y,
+                ns.Z
+            FROM SystemNames ns
+            JOIN Systems_Named sn
+              ON sn.Id = ns.Id
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_name', len(rows))
@@ -715,7 +788,20 @@ class EDDNSysDB(object):
     def load_regions(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Regions\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, Name, X0, Y0, Z0, SizeX, SizeY, SizeZ, RegionAddress, IsHARegion FROM Regions')
+        c.execute('''
+            SELECT
+                Id,
+                Name,
+                X0,
+                Y0,
+                Z0,
+                SizeX,
+                SizeY,
+                SizeZ,
+                RegionAddress,
+                IsHARegion
+            FROM Regions
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_region', len(rows))
@@ -730,7 +816,14 @@ class EDDNSysDB(object):
     def load_factions(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Factions\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, Name, Government, Allegiance FROM Factions')
+        c.execute('''
+            SELECT
+                Id,
+                Name,
+                Government,
+                Allegiance
+            FROM Factions
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_factions')
@@ -749,7 +842,13 @@ class EDDNSysDB(object):
     def load_market_items(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Market Items\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, Name, Type FROM MarketItems')
+        c.execute('''
+            SELECT
+                Id,
+                Name,
+                Type
+            FROM MarketItems
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_market_items')
@@ -762,7 +861,15 @@ class EDDNSysDB(object):
     def load_market_item_sets(self, conn: DBAPIConnection, timer: Timer):
         sys.stderr.write('Loading Market Item Sets\n')
         c = mysql.makestreamingcursor(conn)
-        c.execute('SELECT Id, MarketStationId, Type, ItemCount, ItemsHash FROM MarketItemSet')
+        c.execute('''
+            SELECT
+                Id,
+                MarketStationId,
+                Type,
+                ItemCount,
+                ItemsHash
+            FROM MarketItemSet
+        ''')
         timer.time('sql')
         rows = c.fetchall()
         timer.time('sql_market_item_sets')
@@ -796,14 +903,30 @@ class EDDNSysDB(object):
 
                     if desig not in self.bodydesigs:
                         cursor = self.conn.cursor()
-                        cursor.execute('SELECT Id, BodyDesignation FROM SystemBodyDesignations WHERE BodyDesignation = %s', (desig,))
+                        cursor.execute(
+                            '''
+                                SELECT
+                                    Id,
+                                    BodyDesignation
+                                FROM SystemBodyDesignations
+                                WHERE BodyDesignation = %s
+                            ''',
+                            (desig,)
+                        )
                         row = cursor.fetchone()
 
                         if row and row[1] == desig:
                             desigid = int(row[0])
                             self.bodydesigs[desig] = desigid
                             cursor = self.conn.cursor()
-                            cursor.execute('UPDATE SystemBodyDesignations SET IsUsed = 1 WHERE Id = %s', (desigid,))
+                            cursor.execute(
+                                '''
+                                    UPDATE SystemBodyDesignations SET
+                                        IsUsed = 1
+                                    WHERE Id = %s
+                                ''',
+                                (desigid,)
+                            )
 
                     if desig in self.bodydesigs:
                         desigid = self.bodydesigs[desig]
@@ -859,7 +982,16 @@ class EDDNSysDB(object):
                     vy = int((starpos[1] + 40985) * 32)
                     vz = int((starpos[2] + 24105) * 32)
                     c = self.conn.cursor()
-                    c.execute('UPDATE Systems SET X = %s, Y = %s, Z = %s WHERE Id = %s', (vx, vy, vz, system.id))
+                    c.execute(
+                        '''
+                            UPDATE Systems SET
+                                X = %s,
+                                Y = %s,
+                                Z = %s
+                            WHERE Id = %s
+                        ''',
+                        (vx, vy, vz, system.id)
+                    )
                     system = dataclasses.replace(system, x = starpos[0], y = starpos[1], z = starpos[2], hascoords = True)
 
                 return system
@@ -945,7 +1077,20 @@ class EDDNSysDB(object):
 
                 if modsysaddr is not None:
                     cursor = self.conn.cursor()
-                    cursor.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
+                    cursor.execute(
+                        '''
+                            SELECT
+                                ns.Id,
+                                ns.SystemAddress,
+                                ns.Name,
+                                ns.X,
+                                ns.Y,
+                                ns.Z
+                            FROM SystemNames ns
+                            WHERE ModSystemAddress = %s
+                        ''',
+                        (modsysaddr,)
+                    )
                     systems.extend([
                         EDDNSystem(
                             row[0],
@@ -970,7 +1115,29 @@ class EDDNSysDB(object):
             sysname = ''
 
         c = self.conn.cursor()
-        c.execute('SELECT Id, MarketId, StationName, SystemName, SystemId, StationType, COALESCE(StationType_Location, StationType), Body, BodyID, IsRejected, ValidFrom, ValidUntil, Test FROM Stations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
+        c.execute(
+            '''
+                SELECT
+                    Id,
+                    MarketId,
+                    StationName,
+                    SystemName,
+                    SystemId,
+                    StationType,
+                    COALESCE(StationType_Location, StationType),
+                    Body,
+                    BodyID,
+                    IsRejected,
+                    ValidFrom,
+                    ValidUntil,
+                    Test
+                FROM Stations
+                WHERE SystemName = %s
+                  AND StationName = %s
+                ORDER BY ValidUntil - ValidFrom
+            ''',
+            (sysname, name)
+        )
         stations = [ EDDNStation(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01', row[10], row[11], row[12] == b'\x01') for row in c ]
 
         candidates = []
@@ -1169,7 +1336,20 @@ class EDDNSysDB(object):
                         #raise ValueError('Unable to resolve system address')
 
                     c = self.conn.cursor()
-                    c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
+                    c.execute(
+                        '''
+                            SELECT
+                                ns.Id,
+                                ns.SystemAddress,
+                                ns.Name,
+                                ns.X,
+                                ns.Y,
+                                ns.Z
+                            FROM SystemNames ns
+                            WHERE ModSystemAddress = %s
+                        ''',
+                        (modsysaddr,)
+                    )
                     system = self._findsystem(c, sysname, starpos, sysaddr, systems)
                     timer.time('sysselectmaddr')
 
@@ -1199,7 +1379,20 @@ class EDDNSysDB(object):
         if sysaddr is not None:
             modsysaddr = self.sysaddr_to_modsysaddr(sysaddr)
             c = self.conn.cursor()
-            c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
+            c.execute(
+                '''
+                    SELECT
+                        ns.Id,
+                        ns.SystemAddress,
+                        ns.Name,
+                        ns.X,
+                        ns.Y,
+                        ns.Z
+                    FROM SystemNames ns
+                    WHERE ModSystemAddress = %s
+                ''',
+                (modsysaddr,)
+            )
             system = self._findsystem(c, sysname, starpos, sysaddr, systems)
             timer.time('sysselectmaddr')
 
@@ -1207,7 +1400,22 @@ class EDDNSysDB(object):
                 return system, None, None
 
         c = self.conn.cursor()
-        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns JOIN Systems_Named sn ON sn.Id = ns.Id WHERE sn.Name = %s', (sysname,))
+        c.execute(
+            '''
+                SELECT
+                    ns.Id,
+                    ns.SystemAddress,
+                    ns.Name,
+                    ns.X,
+                    ns.Y,
+                    ns.Z
+                FROM SystemNames ns
+                JOIN Systems_Named sn
+                  ON sn.Id = ns.Id
+                WHERE sn.Name = %s
+            ''',
+            (sysname,)
+        )
 
         system = self._findsystem(c, sysname, starpos, sysaddr, systems)
         timer.time('sysselectname')
@@ -1227,7 +1435,20 @@ class EDDNSysDB(object):
             timer.time('sysquery', 0)
             modsysaddr = self.sysaddr_to_modsysaddr(edtsid64)
             c = self.conn.cursor()
-            c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
+            c.execute(
+                '''
+                    SELECT
+                        ns.Id,
+                        ns.SystemAddress,
+                        ns.Name,
+                        ns.X,
+                        ns.Y,
+                        ns.Z
+                    FROM SystemNames ns
+                    WHERE ModSystemAddress = %s
+                ''',
+                (modsysaddr,)
+            )
             system = self._findsystem(c, sysname, starpos, sysaddr, systems)
             timer.time('sysselectmaddr')
 
@@ -1238,7 +1459,20 @@ class EDDNSysDB(object):
             timer.time('sysquery', 0)
             modsysaddr = self.sysaddr_to_modsysaddr(sysaddr)
             c = self.conn.cursor()
-            c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress = %s', (modsysaddr,))
+            c.execute(
+                '''
+                    SELECT
+                        ns.Id,
+                        ns.SystemAddress,
+                        ns.Name,
+                        ns.X,
+                        ns.Y,
+                        ns.Z
+                    FROM SystemNames ns
+                    WHERE ModSystemAddress = %s
+                ''',
+                (modsysaddr,)
+            )
             system = self._findsystem(c, sysname, starpos, sysaddr, systems)
             timer.time('sysselectmaddr')
 
@@ -1247,7 +1481,22 @@ class EDDNSysDB(object):
 
         timer.time('sysquery', 0)
         c = self.conn.cursor()
-        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns JOIN Systems_Named sn ON sn.Id = ns.Id WHERE sn.Name = %s', (sysname,))
+        c.execute(
+            '''
+                SELECT
+                    ns.Id,
+                    ns.SystemAddress,
+                    ns.Name,
+                    ns.X,
+                    ns.Y,
+                    ns.Z
+                FROM SystemNames ns
+                JOIN Systems_Named sn
+                  ON sn.Id = ns.Id
+                WHERE sn.Name = %s
+            ''',
+            (sysname,)
+        )
 
         system = self._findsystem(c, sysname, starpos, None, systems)
         timer.time('sysselectname')
@@ -1263,10 +1512,30 @@ class EDDNSysDB(object):
             if starpos is None or raddr == modsysaddr >> 40:
                 cursor = self.conn.cursor()
                 cursor.execute(
-                    'INSERT INTO Systems ' +
-                    '(ModSystemAddress, X,  Y,  Z,  IsHASystem, IsNamedSystem) VALUES ' +
-                    '(%s,               %s, %s, %s, %s,         0)',
-                     (modsysaddr,       vx, vy, vz, ri.isharegion)
+                    '''
+                        INSERT INTO Systems (
+                            ModSystemAddress,
+                            X,
+                            Y,
+                            Z,
+                            IsHASystem,
+                            IsNamedSystem
+                        ) VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            0
+                        )
+                    ''',
+                    (
+                        modsysaddr,
+                        vx,
+                        vy,
+                        vz,
+                        ri.isharegion
+                    )
                 )
                 sysid = cursor.lastrowid
                 if ri.isharegion:
@@ -1279,10 +1548,40 @@ class EDDNSysDB(object):
                     mid2 = ord(mid1_2[3]) - 65
                     sz = ord(sizecls) - 97
                     cursor.execute(
-                        'INSERT INTO Systems_HASector ' +
-                        '(Id,    ModSystemAddress, RegionId, Mid1a, Mid1b, Mid2, SizeClass, Mid3, Sequence) VALUES ' +
-                        '(%s,    %s,               %s,       %s,    %s,    %s,   %s,        %s,   %s)',
-                         (sysid, modsysaddr,       ri.id,    mid1a, mid1b, mid2, sz,        mid3, seq)
+                        '''
+                            INSERT INTO Systems_HASector (
+                                Id,
+                                ModSystemAddress,
+                                RegionId,
+                                Mid1a,
+                                Mid1b,
+                                Mid2,
+                                SizeClass,
+                                Mid3,
+                                Sequence
+                            ) VALUES (
+                                %s,
+                                %s,
+                                %s,
+                                %s,
+                                %s,
+                                %s,
+                                %s,
+                                %s,
+                                %s
+                            )
+                        ''',
+                        (
+                            sysid,
+                            modsysaddr,
+                            ri.id,
+                            mid1a,
+                            mid1b,
+                            mid2,
+                            sz,
+                            mid3,
+                            seq
+                        )
                     )
 
                 if starpos is not None:
@@ -1295,23 +1594,57 @@ class EDDNSysDB(object):
             if starpos is None or raddr == modsysaddr >> 40:
                 cursor = self.conn.cursor()
                 cursor.execute(
-                    'INSERT INTO Systems ' +
-                    '(ModSystemAddress, X,  Y,  Z,  IsHASystem, IsNamedSystem) VALUES ' +
-                    '(%s,               %s, %s, %s, 0,         1)',
-                     (modsysaddr,       vx, vy, vz)
+                    '''
+                        INSERT INTO Systems (
+                            ModSystemAddress,
+                            X,
+                            Y,
+                            Z,
+                            IsHASystem,
+                            IsNamedSystem
+                        ) VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            0,
+                            1
+                        )
+                    ''',
+                    (
+                        modsysaddr,
+                        vx,
+                        vy,
+                        vz
+                    )
                 )
                 sysid = cursor.lastrowid
                 cursor.execute(
-                    'INSERT INTO Systems_Named ' +
-                    '(Id,    Name) VALUES ' +
-                    '(%s,    %s)',
-                     (sysid, sysname)
+                    '''
+                        INSERT INTO Systems_Named (
+                            Id,
+                            Name
+                        ) VALUES (
+                            %s,
+                            %s
+                        )
+                    ''',
+                    (
+                        sysid,
+                        sysname
+                    )
                 )
                 cursor.execute(
-                    'INSERT INTO Systems_Validity ' +
-                    '(Id,    IsRejected) VALUES ' +
-                    '(%s,    1)',
-                     (sysid, )
+                    '''
+                        INSERT INTO Systems_Validity (
+                            Id,
+                            IsRejected
+                        ) VALUES (
+                            %s,
+                            1
+                        )
+                    ''',
+                    (sysid, )
                 )
                 if starpos is not None:
                     return EDDNSystem(sysid, self.modsysaddr_to_sysaddr(modsysaddr), sysname, starpos[0], starpos[1], starpos[2], True), None, None
@@ -1327,7 +1660,24 @@ class EDDNSysDB(object):
                 rz = (vz % 40960) >> mc
                 baddr = (raddr << 40) | (mc << 37) | (rz << 30) | (ry << 23) | (rx << 16)
                 c = self.conn.cursor()
-                c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE ModSystemAddress >= %s AND ModSystemAddress < %s', (baddr,baddr + 65536))
+                c.execute(
+                    '''
+                        SELECT
+                            ns.Id,
+                            ns.SystemAddress,
+                            ns.Name,
+                            ns.X,
+                            ns.Y,
+                            ns.Z
+                        FROM SystemNames ns
+                        WHERE ModSystemAddress >= %s
+                          AND ModSystemAddress < %s
+                    ''',
+                    (
+                        baddr,
+                        baddr + 65536
+                    )
+                )
                 for row in c:
                     if vx - 2 <= row[3] <= vx + 2 and vy - 2 <= row[4] <= vy + 2 and vz - 2 <= row[5] <= vz + 2:
                         systems.add(
@@ -1408,8 +1758,50 @@ class EDDNSysDB(object):
             stationtype = 'Ocellus'
 
         c = self.conn.cursor()
-        c.execute('SELECT Id, MarketId, StationName, SystemName, SystemId, StationType, COALESCE(StationType_Location, StationType), Body, BodyID, IsRejected, ValidFrom, ValidUntil, Test FROM Stations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
-        stations = [ EDDNStation(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9] == b'\x01', row[10], row[11], row[12] == b'\x01') for row in c ]
+        c.execute(
+            '''
+                SELECT
+                    Id,
+                    MarketId,
+                    StationName,
+                    SystemName,
+                    SystemId,
+                    StationType,
+                    COALESCE(StationType_Location, StationType),
+                    Body,
+                    BodyID,
+                    IsRejected,
+                    ValidFrom,
+                    ValidUntil,
+                    Test
+                FROM Stations
+                WHERE SystemName = %s
+                  AND StationName = %s
+                ORDER BY ValidUntil - ValidFrom
+            ''',
+            (
+                sysname,
+                name
+            )
+        )
+
+        stations = [
+            EDDNStation(
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
+                row[7],
+                row[8],
+                row[9] == b'\x01',
+                row[10],
+                row[11],
+                row[12] == b'\x01'
+            ) for row in c
+        ]
 
         candidates = []
 
@@ -1569,10 +1961,47 @@ class EDDNSysDB(object):
 
         c = self.conn.cursor()
         c.execute(
-            'INSERT INTO Stations ' +
-            '(MarketId, StationName, SystemName, SystemId, StationType, StationType_Location, Body,     BodyID, ValidFrom, ValidUntil, Test) VALUES ' +
-            '(%s,       %s,          %s,         %s,       %s,          %s,                   %s,       %s,     %s,        %s,         %s)',
-             (marketid, name,        sysname,    sysid,    stationtype, stationtype_location, bodyname, bodyid, validfrom, validuntil, test))
+            '''
+                INSERT INTO Stations (
+                    MarketId,
+                    StationName,
+                    SystemName,
+                    SystemId,
+                    StationType,
+                    StationType_Location,
+                    Body,
+                    BodyID,
+                    ValidFrom,
+                    ValidUntil,
+                    Test
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
+            (
+                marketid,
+                name,
+                sysname,
+                sysid,
+                stationtype,
+                stationtype_location,
+                bodyname,
+                bodyid,
+                validfrom,
+                validuntil,
+                test
+            )
+        )
         return EDDNStation(c.lastrowid, marketid, name, sysname, sysid, stationtype, stationtype_location or stationtype, bodyname, bodyid, False, validfrom, validuntil, test), None, None
 
     def get_market_station(self,
@@ -1593,8 +2022,38 @@ class EDDNSysDB(object):
             return None, 'No timestamp', None
 
         c = self.conn.cursor()
-        c.execute('SELECT Id, MarketId, StationName, SystemName, IsRejected, ValidFrom, ValidUntil FROM MarketStations WHERE SystemName = %s AND StationName = %s ORDER BY ValidUntil - ValidFrom', (sysname, name))
-        stations = [ EDDNMarketStation(row[0], row[1], row[2], row[3], row[4] == b'\x01', row[5], row[6]) for row in c ]
+        c.execute(
+            '''
+                SELECT 
+                    Id,
+                    MarketId,
+                    StationName,
+                    SystemName,
+                    IsRejected,
+                    ValidFrom,
+                    ValidUntil
+                FROM MarketStations
+                WHERE SystemName = %s
+                  AND StationName = %s
+                ORDER BY ValidUntil - ValidFrom
+            ''',
+            (
+                sysname,
+                name
+            )
+        )
+
+        stations = [
+            EDDNMarketStation(
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4] == b'\x01',
+                row[5],
+                row[6]
+            ) for row in c
+        ]
 
         candidates = []
 
@@ -1675,10 +2134,30 @@ class EDDNSysDB(object):
 
         c = self.conn.cursor()
         c.execute(
-            'INSERT INTO MarketStations ' +
-            '(MarketId, StationName, SystemName, ValidFrom, ValidUntil) VALUES ' +
-            '(%s,       %s,          %s,         %s,        %s)',
-             (marketid, name,        sysname,    validfrom, validuntil))
+            '''
+                INSERT INTO MarketStations (
+                    MarketId,
+                    StationName,
+                    SystemName,
+                    ValidFrom,
+                    ValidUntil
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
+            (
+                marketid,
+                name,
+                sysname,
+                validfrom,
+                validuntil
+            )
+        )
+
         return EDDNMarketStation(c.lastrowid, marketid, name, sysname, False, validfrom, validuntil), None, None
 
     def insert_body_parents(self,
@@ -1693,30 +2172,69 @@ class EDDNSysDB(object):
             if (bodyid, parentjson) not in self.parentsets:
                 c = self.conn.cursor()
                 c.execute(
-                    'INSERT INTO ParentSets ' +
-                    '(BodyId, ParentJson) VALUES ' +
-                    '(%s,     %s)',
-                     (bodyid, parentjson))
+                    '''
+                        INSERT INTO ParentSets (
+                            BodyId,
+                            ParentJson
+                        ) VALUES (
+                            %s,
+                            %s
+                        )
+                    ''',
+                    (
+                         bodyid,
+                         parentjson
+                    )
+                )
+
                 self.parentsets[(bodyid, parentjson)] = c.lastrowid
 
             parentsetid = self.parentsets[(bodyid, parentjson)]
 
             c = self.conn.cursor()
             c.execute(
-                'INSERT IGNORE INTO SystemBodies_ParentSet ' +
-                '(Id, ParentSetId) VALUES ' +
-                '(%s, %s)',
-                 (scanbodyid, parentsetid))
+                '''
+                    INSERT IGNORE INTO SystemBodies_ParentSet (
+                        Id,
+                        ParentSetId
+                    ) VALUES (
+                        %s,
+                        %s
+                    )
+                ''',
+                (
+                    scanbodyid,
+                    parentsetid
+                )
+            )
 
     def insert_software(self, softwarename: str):
         if softwarename not in self.software:
             c = self.conn.cursor()
-            c.execute('INSERT INTO Software (Name) VALUES (%s)', (softwarename,))
+            c.execute(
+                '''
+                    INSERT INTO Software (
+                        Name
+                    ) VALUES (
+                        %s
+                    )
+                ''',
+                (softwarename,)
+            )
             self.software[softwarename] = c.lastrowid
 
     def insert_edsm_file(self, filename: str) -> int:
         c = self.conn.cursor()
-        c.execute('INSERT INTO EDSMBodyFiles (FileName) VALUES (%s)', (filename,))
+        c.execute(
+            '''
+                INSERT INTO EDSMBodyFiles (
+                    FileName
+                ) VALUES (
+                    %s
+                )
+            ''',
+            (filename,)
+        )
         return c.lastrowid
 
     def get_body(self,
@@ -1795,14 +2313,31 @@ class EDDNSysDB(object):
                 desigid = self.bodydesigs[desig]
             else:
                 cursor = self.conn.cursor()
-                cursor.execute('SELECT Id, BodyDesignation FROM SystemBodyDesignations WHERE BodyDesignation = %s', (desig,))
+                cursor.execute(
+                    '''
+                        SELECT
+                            Id,
+                            BodyDesignation
+                        FROM SystemBodyDesignations
+                        WHERE BodyDesignation = %s
+                    ''',
+                    (desig,)
+                )
+
                 row = cursor.fetchone()
 
                 if row and row[1] == desig:
                     desigid = int(row[0])
                     self.bodydesigs[desig] = desigid
                     cursor = self.conn.cursor()
-                    cursor.execute('UPDATE SystemBodyDesignations SET IsUsed = 1 WHERE Id = %s', (desigid,))
+                    cursor.execute(
+                        '''
+                            UPDATE SystemBodyDesignations SET
+                                IsUsed = 1
+                            WHERE Id = %s
+                        ''',
+                        (desigid,)
+                    )
                 elif match:
                     stars = match['stars']
                     nebula = match['nebula']
@@ -1919,9 +2454,57 @@ class EDDNSysDB(object):
 
         timer.time('bodyquery', 0)
         cursor = self.conn.cursor()
-        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND BodyName = %s AND IsNamedBody = 1', (system.id, name))
+
+        cursor.execute(
+            '''
+                SELECT
+                    Id,
+                    BodyName,
+                    SystemName,
+                    SystemId,
+                    BodyId,
+                    BodyCategoryDescription,
+                    ArgOfPeriapsis,
+                    ValidFrom,
+                    ValidUntil,
+                    IsRejected
+                FROM SystemBodyNames sn
+                WHERE SystemId = %s
+                  AND BodyName = %s
+                  AND IsNamedBody = 1
+            ''',
+            (
+                system.id,
+                name
+            )
+        )
+
         rows = cursor.fetchall()
-        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND BodyName = %s AND IsNamedBody = 0', (system.id, name))
+
+        cursor.execute(
+            '''
+                SELECT
+                    Id,
+                    BodyName,
+                    SystemName,
+                    SystemId,
+                    BodyId,
+                    BodyCategoryDescription,
+                    ArgOfPeriapsis,
+                    ValidFrom,
+                    ValidUntil,
+                    IsRejected
+                FROM SystemBodyNames sn
+                WHERE SystemId = %s
+                  AND BodyName = %s
+                  AND IsNamedBody = 0
+            ''',
+            (
+                system.id,
+                name
+            )
+        )
+
         rows += cursor.fetchall()
         timer.time('bodyselectname')
         _ufrows = rows
@@ -1959,9 +2542,35 @@ class EDDNSysDB(object):
             row = rows[0]
             if row[4] is None and bodyid is not None:
                 cursor = self.conn.cursor()
-                cursor.execute('UPDATE SystemBodies SET HasBodyId = 1, BodyID = %s WHERE Id = %s', (bodyid, row[0]))
+
+                cursor.execute(
+                    '''
+                        UPDATE SystemBodies SET
+                            HasBodyId = 1,
+                            BodyID = %s
+                        WHERE Id = %s
+                    ''',
+                    (
+                        bodyid,
+                        row[0]
+                    )
+                )
+
                 timer.time('bodyupdateid')
-            return EDDNBody(row[0], name, sysname, system.id, row[4] or bodyid, None, (body.get('Periapsis')), None, None, False), None, None
+
+            return EDDNBody(
+                row[0],
+                name,
+                sysname,
+                system.id,
+                row[4] or bodyid,
+                None,
+                (body.get('Periapsis')),
+                None,
+                None,
+                False
+            ), None, None
+
         elif len(rows) > 1:
             return (
                 None,
@@ -1981,9 +2590,49 @@ class EDDNSysDB(object):
             )
         else:
             cursor = self.conn.cursor()
-            cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (system.id, ))
+
+            cursor.execute(
+                '''
+                    SELECT
+                        Id,
+                        BodyName,
+                        SystemName,
+                        SystemId,
+                        BodyId,
+                        BodyCategoryDescription,
+                        ArgOfPeriapsis,
+                        ValidFrom,
+                        ValidUntil,
+                        IsRejected
+                    FROM SystemBodyNames sn
+                    WHERE SystemId = %s
+                      AND IsNamedBody = 1
+                ''',
+                (system.id, )
+            )
+
             allrows = cursor.fetchall()
-            cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (system.id, ))
+
+            cursor.execute(
+                '''
+                    SELECT
+                        Id,
+                        BodyName,
+                        SystemName,
+                        SystemId,
+                        BodyId,
+                        BodyCategoryDescription,
+                        ArgOfPeriapsis,
+                        ValidFrom,
+                        ValidUntil,
+                        IsRejected
+                    FROM SystemBodyNames sn
+                    WHERE SystemId = %s
+                      AND IsNamedBody = 0
+                ''',
+                (system.id, )
+            )
+
             allrows += cursor.fetchall()
             frows = [ r for r in allrows if r[1].lower() == name.lower() ]
 
@@ -1997,9 +2646,49 @@ class EDDNSysDB(object):
                         systems = [systems]
                     for xsystem in systems:
                         cursor = self.conn.cursor()
-                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (xsystem.id, ))
+
+                        cursor.execute(
+                            '''
+                                SELECT
+                                    Id,
+                                    BodyName,
+                                    SystemName,
+                                    SystemId,
+                                    BodyId,
+                                    BodyCategoryDescription,
+                                    ArgOfPeriapsis,
+                                    ValidFrom,
+                                    ValidUntil,
+                                    IsRejected
+                                FROM SystemBodyNames sn
+                                WHERE SystemId = %s 
+                                  AND IsNamedBody = 1
+                            ''',
+                            (xsystem.id, )
+                        )
+
                         allrows += cursor.fetchall()
-                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (xsystem.id, ))
+
+                        cursor.execute(
+                            '''
+                                SELECT
+                                    Id,
+                                    BodyName,
+                                    SystemName,
+                                    SystemId,
+                                    BodyId,
+                                    BodyCategoryDescription,
+                                    ArgOfPeriapsis,
+                                    ValidFrom,
+                                    ValidUntil,
+                                    IsRejected
+                                FROM SystemBodyNames sn
+                                WHERE SystemId = %s
+                                  AND IsNamedBody = 0
+                            ''',
+                            (xsystem.id, )
+                        )
+
                         allrows += cursor.fetchall()
                 _frows = [ r for r in allrows if r[1].lower() == name.lower() ]
 
@@ -2025,19 +2714,57 @@ class EDDNSysDB(object):
 
             if ispgname and desigid is not None:
                 cursor = self.conn.cursor()
+
                 cursor.execute(
-                    'INSERT INTO SystemBodies ' +
-                    '(SystemId,  HasBodyId, BodyId,      BodyDesignationId, IsNamedBody) VALUES ' +
-                    '(%s,        %s,        %s,          %s,                0)',
-                     (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
+                    '''
+                        INSERT INTO SystemBodies (
+                            SystemId,
+                            HasBodyId,
+                            BodyId,
+                            BodyDesignationId,
+                            IsNamedBody
+                        ) VALUES (
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            0
+                        )
+                    ''',
+                    (
+                        system.id,
+                        bodyid is not None,
+                        bodyid or 0,
+                        desigid
+                    )
                 )
+
                 timer.time('bodyinsertpg')
                 return EDDNBody(cursor.lastrowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, False), None, None
 
             if (not ispgname and pgsysre.match(name)) or desigid is None:
                 allrows = []
                 cursor = self.conn.cursor()
-                cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sb WHERE sb.CustomName = %s', (name,))
+
+                cursor.execute(
+                    '''
+                        SELECT
+                            Id,
+                            BodyName,
+                            SystemName,
+                            SystemId,
+                            BodyId,
+                            BodyCategoryDescription,
+                            ArgOfPeriapsis,
+                            ValidFrom,
+                            ValidUntil,
+                            IsRejected
+                        FROM SystemBodyNames sb
+                        WHERE sb.CustomName = %s
+                    ''',
+                    (name,)
+                )
+
                 allrows += cursor.fetchall()
                 pgsysbodymatch = pgsysbodyre.match(name)
 
@@ -2048,9 +2775,49 @@ class EDDNSysDB(object):
 
                     for dupsystem in dupsystems:
                         cursor = self.conn.cursor()
-                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 1', (dupsystem.id, ))
+
+                        cursor.execute(
+                            '''
+                                SELECT
+                                    Id,
+                                    BodyName,
+                                    SystemName,
+                                    SystemId,
+                                    BodyId,
+                                    BodyCategoryDescription,
+                                    ArgOfPeriapsis,
+                                    ValidFrom,
+                                    ValidUntil,
+                                    IsRejected
+                                FROM SystemBodyNames sn
+                                WHERE SystemId = %s
+                                  AND IsNamedBody = 1
+                            ''',
+                            (dupsystem.id, )
+                        )
+
                         allrows += cursor.fetchall()
-                        cursor.execute('SELECT Id, BodyName, SystemName, SystemId, BodyId, BodyCategoryDescription, ArgOfPeriapsis, ValidFrom, ValidUntil, IsRejected FROM SystemBodyNames sn WHERE SystemId = %s AND IsNamedBody = 0', (dupsystem.id, ))
+
+                        cursor.execute(
+                            '''
+                                SELECT
+                                    Id,
+                                    BodyName,
+                                    SystemName,
+                                    SystemId,
+                                    BodyId,
+                                    BodyCategoryDescription,
+                                    ArgOfPeriapsis,
+                                    ValidFrom,
+                                    ValidUntil,
+                                    IsRejected
+                                FROM SystemBodyNames sn
+                                WHERE SystemId = %s
+                                  AND IsNamedBody = 0
+                            ''',
+                            (dupsystem.id, )
+                        )
+
                         allrows += cursor.fetchall()
 
                 frows = [ r for r in allrows if r[1].lower() == name.lower() ]
@@ -2081,33 +2848,81 @@ class EDDNSysDB(object):
                     return None, 'Unknown named body', [{'System': sysname, 'Body': name}]
 
             cursor = self.conn.cursor()
+
             cursor.execute(
-                'INSERT INTO SystemBodies ' +
-                '(SystemId,  HasBodyId, BodyId,      BodyDesignationId, IsNamedBody) VALUES '
-                '(%s,        %s,        %s,          %s,                 1)',
-                 (system.id, 1 if bodyid is not None else 0, bodyid or 0, desigid)
+                '''
+                    INSERT INTO SystemBodies (
+                        SystemId,
+                        HasBodyId,
+                        BodyId,
+                        BodyDesignationId,
+                        IsNamedBody
+                    ) VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        1
+                    )
+                    ''',
+                (
+                    system.id,
+                    bodyid is not None,
+                    bodyid or 0,
+                    desigid
+                )
             )
+
             rowid = cursor.lastrowid
             if rowid is None:
                 import pdb; pdb.set_trace()
 
             cursor.execute(
-                'INSERT INTO SystemBodies_Named ' +
-                '(Id,    SystemId, Name) VALUES ' +
-                '(%s,    %s,       %s)',
-                 (rowid, system.id, name)
+                '''
+                    INSERT INTO SystemBodies_Named (
+                        Id,
+                        SystemId,
+                        Name
+                    ) VALUES (
+                        %s,
+                        %s,
+                        %s
+                    )
+                ''',
+                (
+                    rowid,
+                    system.id,
+                    name
+                )
             )
 
-            '''
+            """
             cursor.execute(
-                'INSERT INTO SystemBodies_Validity ' +
-                '(Id,    IsRejected) VALUES ' +
-                '(%s,    1)',
-                 (rowid, )
+                '''
+                    INSERT INTO SystemBodies_Validity (
+                        Id,
+                        IsRejected
+                    ) VALUES (
+                        %s,
+                        1
+                    )
+                ''',
+                (rowid, )
             )
-            '''
+            """
 
-            return EDDNBody(rowid, name, sysname, system.id, bodyid, None, (body.get('Periapsis')), None, None, True), None, None
+            return EDDNBody(
+                rowid,
+                name,
+                sysname,
+                system.id,
+                bodyid,
+                None,
+                (body.get('Periapsis')),
+                None,
+                None,
+                True
+        ), None, None
 
     def get_faction(self,
                     _timer: Timer,
@@ -2131,11 +2946,26 @@ class EDDNSysDB(object):
             return None
 
         c = self.conn.cursor()
+
         c.execute(
-            'INSERT INTO Factions ' +
-            '(Name, Government, Allegiance) VALUES ' +
-            '(%s,   %s,         %s)',
-            (name, government, allegiance))
+            '''
+                INSERT INTO Factions (
+                    Name,
+                    Government,
+                    Allegiance
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
+            (
+                name,
+                government,
+                allegiance
+            )
+        )
+
         factionid = c.lastrowid
 
         faction = EDDNFaction(factionid, name, government, allegiance)
@@ -2160,10 +2990,19 @@ class EDDNSysDB(object):
 
         c = self.conn.cursor()
         c.execute(
-            'INSERT INTO MarketItems ' +
-            '(Name, Type) VALUES ' +
-            '(%s, %s)',
-            (name, mkttype)
+            '''
+                INSERT INTO MarketItems (
+                    Name,
+                    Type
+                ) VALUES (
+                    %s,
+                    %s
+                )
+            ''',
+            (
+                name,
+                mkttype
+            )
         )
         itemid = c.lastrowid
 
@@ -2195,10 +3034,25 @@ class EDDNSysDB(object):
 
         c = self.conn.cursor()
         c.execute(
-            'INSERT INTO MarketItemSet ' +
-            '(MarketStationId, Type, ItemCount, ItemsHash) VALUES ' +
-            '(%s, %s, %s, %s)',
-            (station.id, mkttype, len(items), items_hash)
+            '''
+                INSERT INTO MarketItemSet (
+                    MarketStationId,
+                    Type,
+                    ItemCount,
+                    ItemsHash
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
+            (
+                station.id,
+                mkttype,
+                len(items),
+                items_hash
+            )
         )
 
         setid = c.lastrowid
@@ -2211,9 +3065,17 @@ class EDDNSysDB(object):
 
         c = self.conn.cursor()
         c.executemany(
-            'INSERT INTO MarketItemSet_Item ' +
-            '(MarketItemSetId, EntryNum, MarketItemId) VALUES ' +
-            '(%s, %s, %s)',
+            '''
+                INSERT INTO MarketItemSet_Item (
+                    MarketItemSetId,
+                    EntryNum,
+                    MarketItemId
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             setrows
         )
 
@@ -2230,8 +3092,23 @@ class EDDNSysDB(object):
 
         c = self.conn.cursor()
         c.execute(
-            'UPDATE Stations SET MarketId = %s, SystemId = %s, StationType = %s, Body = %s, BodyID = %s WHERE Id = %s',
-            (station.marketid, station.systemid, station.type, station.body, station.bodyid, station.id)
+            '''
+                UPDATE Stations SET
+                    MarketId = %s,
+                    SystemId = %s,
+                    StationType = %s,
+                    Body = %s,
+                    BodyID = %s
+                WHERE Id = %s
+            ''',
+            (
+                station.marketid,
+                station.systemid,
+                station.type,
+                station.body,
+                station.bodyid,
+                station.id
+            )
         )
 
         return station
@@ -2242,17 +3119,50 @@ class EDDNSysDB(object):
         station = dataclasses.replace(station, **kwargs)
 
         c = self.conn.cursor()
-        c.execute('UPDATE MarketStations SET MarketId = %s WHERE Id = %s', (station.marketid, station.id))
+        c.execute(
+            '''
+                UPDATE MarketStations SET
+                    MarketId = %s
+                WHERE Id = %s
+            ''',
+            (
+                station.marketid,
+                station.id
+            )
+        )
 
         return station
 
     def get_system_by_id(self, sysid: int) -> EDDNSystem | None:
         c = self.conn.cursor()
-        c.execute('SELECT ns.Id, ns.SystemAddress, ns.Name, ns.X, ns.Y, ns.Z FROM SystemNames ns WHERE Id = %s', (sysid,))
+
+        c.execute(
+            '''
+                SELECT
+                    ns.Id,
+                    ns.SystemAddress,
+                    ns.Name,
+                    ns.X,
+                    ns.Y,
+                    ns.Z
+                FROM SystemNames ns
+                WHERE Id = %s
+            ''',
+            (sysid,)
+        )
+
         row = c.fetchone()
 
         if row:
-            return EDDNSystem(row[0], row[1], self._namestr(row[2]), row[3] / 32.0 - 49985, row[4] / 32.0 - 40985, row[5] / 32.0 - 24105, row[3] != 0 and row[4] != 0 and row[5] != 0)
+            return EDDNSystem(
+                row[0],
+                row[1],
+                self._namestr(row[2]),
+                row[3] / 32.0 - 49985,
+                row[4] / 32.0 - 40985,
+                row[5] / 32.0 - 24105,
+                row[3] != 0 and row[4] != 0 and row[5] != 0
+            )
         else:
             return None
 
@@ -2390,7 +3300,19 @@ class EDDNSysDB(object):
                 return row[0], row[2], row[3], row
 
         c = self.conn.cursor()
-        c.execute('SELECT Id, TimestampSeconds, HasCoords FROM Systems_EDSM WHERE EdsmId = %s', (edsmid,))
+
+        c.execute(
+            '''
+                SELECT
+                    Id,
+                    TimestampSeconds,
+                    HasCoords
+                FROM Systems_EDSM
+                WHERE EdsmId = %s
+            ''',
+            (edsmid,)
+        )
+
         row = c.fetchone()
 
         if row:
@@ -2407,7 +3329,18 @@ class EDDNSysDB(object):
                 return row[0], row[2], row
 
         c = self.conn.cursor()
-        c.execute('SELECT Id, TimestampSeconds FROM SystemBodies_EDSM WHERE EdsmId = %s', (edsmid,))
+
+        c.execute(
+            '''
+                SELECT
+                    Id,
+                    TimestampSeconds
+                FROM SystemBodies_EDSM
+                WHERE EdsmId = %s
+            ''',
+            (edsmid,)
+        )
+
         row = c.fetchone()
 
         if row:
@@ -2436,12 +3369,37 @@ class EDDNSysDB(object):
             ts = int((ts - tsbasedate).total_seconds())
 
         c = self.conn.cursor()
-        c.execute('INSERT INTO Systems_EDSM SET ' +
-                  'EdsmId = %s, Id = %s, TimestampSeconds = %s, HasCoords = %s, IsHidden = %s, IsDeleted = %s ' +
-                  'ON DUPLICATE KEY UPDATE ' +
-                  'Id = %s, TimestampSeconds = %s, HasCoords = %s, IsHidden = %s, IsDeleted = %s',
-                  (edsmid, sysid, ts, 1 if hascoords else 0, 1 if ishidden else 0, 1 if isdeleted else 0,
-                           sysid, ts, 1 if hascoords else 0, 1 if ishidden else 0, 1 if isdeleted else 0))
+
+        c.execute(
+            '''
+                INSERT INTO Systems_EDSM SET
+                    EdsmId = %s,
+                    Id = %s,
+                    TimestampSeconds = %s,
+                    HasCoords = %s,
+                    IsHidden = %s,
+                    IsDeleted = %s
+                ON DUPLICATE KEY UPDATE
+                    Id = %s,
+                    TimestampSeconds = %s,
+                    HasCoords = %s,
+                    IsHidden = %s,
+                    IsDeleted = %s
+            ''',
+            (
+                edsmid,
+                sysid,
+                ts,
+                hascoords,
+                ishidden,
+                isdeleted,
+                sysid,
+                ts,
+                hascoords,
+                ishidden,
+                isdeleted
+            )
+        )
 
         if edsmid < len(self.edsmsysids):
             rec = self.edsmsysids[edsmid]
@@ -2461,9 +3419,25 @@ class EDDNSysDB(object):
                             ts: datetime) -> tuple[int, ...] | None:
         ts = int((ts - tsbasedate).total_seconds())
         c = self.conn.cursor()
-        c.execute('INSERT INTO SystemBodies_EDSM SET EdsmId = %s, Id = %s, TimestampSeconds = %s ' +
-                  'ON DUPLICATE KEY UPDATE Id = %s, TimestampSeconds = %s',
-                  (edsmid, bodyid, ts, bodyid, ts))
+
+        c.execute(
+            '''
+                INSERT INTO SystemBodies_EDSM SET
+                    EdsmId = %s,
+                    Id = %s,
+                    TimestampSeconds = %s
+                ON DUPLICATE KEY UPDATE
+                    Id = %s,
+                    TimestampSeconds = %s
+            ''',
+            (
+                edsmid,
+                bodyid,
+                ts,
+                bodyid,
+                ts
+            )
+        )
 
         if edsmid < len(self.edsmbodyids):
             rec = self.edsmbodyids[edsmid]
@@ -2479,9 +3453,24 @@ class EDDNSysDB(object):
                                stationid: int,
                                ts: datetime):
         c = self.conn.cursor()
-        c.execute('INSERT INTO Stations_EDSM SET EdsmStationId = %s, Id = %s, Timestamp = %s ' +
-                  'ON DUPLICATE KEY UPDATE Id = %s, Timestamp = %s',
-                  (edsmid, stationid, ts, stationid, ts))
+        c.execute(
+            '''
+                INSERT INTO Stations_EDSM SET
+                    EdsmStationId = %s,
+                    Id = %s,
+                    Timestamp = %s
+                ON DUPLICATE KEY UPDATE
+                    Id = %s,
+                    Timestamp = %s
+            ''',
+            (
+                edsmid,
+                stationid,
+                ts,
+                stationid,
+                ts
+            )
+        )
 
     def find_eddb_sys_id(self,
                          eddbid: int) -> tuple[int | None, int | None]:
@@ -2492,7 +3481,18 @@ class EDDNSysDB(object):
                 return row[0], row[2]
 
         c = self.conn.cursor()
-        c.execute('SELECT Id, TimestampSeconds FROM Systems_EDDB WHERE EddbId = %s', (eddbid,))
+
+        c.execute(
+            '''
+                SELECT
+                    Id,
+                    TimestampSeconds
+                FROM Systems_EDDB
+                WHERE EddbId = %s
+            ''',
+            (eddbid,)
+        )
+
         row = c.fetchone()
 
         if row:
@@ -2505,9 +3505,24 @@ class EDDNSysDB(object):
                            sysid: int,
                            ts: int):
         c = self.conn.cursor()
-        c.execute('INSERT INTO Systems_EDDB SET EddbId = %s, Id = %s, TimestampSeconds = %s ' +
-                  'ON DUPLICATE KEY UPDATE Id = %s, TimestampSeconds = %s',
-                  (eddbid, sysid, ts, sysid, ts))
+        c.execute(
+            '''
+                INSERT INTO Systems_EDDB SET
+                    EddbId = %s,
+                    Id = %s,
+                    TimestampSeconds = %s
+                ON DUPLICATE KEY UPDATE
+                    Id = %s,
+                    TimestampSeconds = %s
+            ''',
+            (
+                eddbid,
+                sysid,
+                ts,
+                sysid,
+                ts
+            )
+        )
 
     def add_file_line_stations(self,
                                linelist: list[tuple[int, int, EDDNStation]]):
@@ -2517,92 +3532,245 @@ class EDDNSysDB(object):
     def add_file_line_info(self,
                            linelist: list[tuple[int, int, datetime | None, datetime, int, int | None, int, float | None, bool, bool, bool]]):
         self.conn.cursor().executemany(
-            'INSERT INTO FileLineInfo ' +
-            '(FileId, LineNo, Timestamp, GatewayTimestamp, SoftwareId, SystemId, LineLength, DistFromArrivalLS, HasBodyId, HasSystemAddress, HasMarketId) VALUES ' +
-            '(%s,     %s,     %s,        %s,               %s,         %s,       %s,         %s,                %s,        %s,               %s)',
+            '''
+                INSERT INTO FileLineInfo (
+                    FileId,
+                    LineNo,
+                    Timestamp,
+                    GatewayTimestamp,
+                    SoftwareId,
+                    SystemId,
+                    LineLength,
+                    DistFromArrivalLS,
+                    HasBodyId,
+                    HasSystemAddress,
+                    HasMarketId
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             linelist
         )
 
     def add_file_line_bodies(self,
                              linelist: list[tuple[int, int, int, datetime]]):
         self.conn.cursor().executemany(
-            'INSERT INTO FileLineBodies ' +
-            '(FileId, LineNo, BodyId, GatewayTimestamp) VALUES ' +
-            '(%s,     %s,     %s,     %s)',
+            '''
+                INSERT INTO FileLineBodies (
+                    FileId,
+                    LineNo,
+                    BodyId,
+                    GatewayTimestamp
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             linelist
         )
 
     def add_file_line_factions(self,
                                linelist: list[tuple[int, int, EDDNFaction, int]]):
-        values = [(fileid, lineno, faction.id, entrynum) for fileid, lineno, faction, entrynum in linelist]
+        values = [
+            (fileid, lineno, faction.id, entrynum)
+            for fileid, lineno, faction, entrynum in linelist
+        ]
+
         self.conn.cursor().executemany(
-            'INSERT INTO FileLineFactions ' +
-            '(FileId, LineNo, FactionId, EntryNum) VALUES ' +
-            '(%s,     %s,     %s,        %s)',
+            '''
+                INSERT INTO FileLineFactions (
+                    FileId,
+                    LineNo,
+                    FactionId,
+                    EntryNum
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             values
         )
 
     def add_file_line_route_systems(self,
                                     linelist: list[tuple[int, int, EDDNSystem, int, datetime]]):
-        values = [(fileid, lineno, system.id, entrynum, gatewayTimestamp) for fileid, lineno, system, entrynum, gatewayTimestamp in linelist]
+        values = [
+            (fileid, lineno, system.id, entrynum, gatewayTimestamp)
+            for fileid, lineno, system, entrynum, gatewayTimestamp in linelist
+        ]
+
         self.conn.cursor().executemany(
-            'INSERT INTO FileLineNavRoutes ' +
-            '(FileId, LineNo, SystemId, EntryNum, GatewayTimestamp) VALUES ' +
-            '(%s,     %s,     %s,       %s,       %s)',
+            '''
+                INSERT INTO FileLineNavRoutes (
+                    FileId,
+                    LineNo,
+                    SystemId,
+                    EntryNum,
+                    GatewayTimestamp
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             values
         )
 
     def add_file_line_market_sets(self,
                                   linelist: list[tuple[int, int, EDDNMarketStation, int, EDDNMarketItemSet]]):
-        values = [(fileid, lineno, station.id, settype, itemset.id) for fileid, lineno, station, settype, itemset in linelist]
+        values = [
+            (fileid, lineno, station.id, settype, itemset.id)
+            for fileid, lineno, station, settype, itemset in linelist
+        ]
+
         self.conn.cursor().executemany(
-            'INSERT INTO FileLineMarketItemSets ' +
-            '(FileId, LineNo, MarketStationId, SetType, ItemSetId) VALUES ' +
-            '(%s, %s, %s, %s, %s)',
+            '''
+                INSERT INTO FileLineMarketItemSets (
+                    FileId,
+                    LineNo,
+                    MarketStationId,
+                    SetType,
+                    ItemSetId
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             values
         )
 
     def add_edsm_file_line_bodies(self,
                                   linelist: list[tuple[int, int, int]]):
-        values = [(fileid, lineno, edsmbodyid) for fileid, lineno, edsmbodyid in linelist]
+        values = [
+            (fileid, lineno, edsmbodyid)
+            for fileid, lineno, edsmbodyid in linelist
+        ]
+
         self.conn.cursor().executemany(
-            'INSERT INTO EDSMFileLineBodies ' +
-            '(FileId, LineNo, EdsmBodyId) VALUES ' +
-            '(%s,     %s,     %s)',
+            '''
+                INSERT INTO EDSMFileLineBodies (
+                    FileId,
+                    LineNo,
+                    EdsmBodyId
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             values
         )
 
     def add_edsm_file_line_systems(self,
                                    linelist: list[tuple[int, int, int, int, datetime, bool, bool]]):
-        values = [(fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked) for fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked in linelist]
+        values = [
+            (fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked)
+            for fileid, lineno, edsmsysid, sysid, timestamp, hascoords, coordslocked in linelist
+        ]
+
         self.conn.cursor().executemany(
-            'INSERT INTO EDSMFileLineSystems ' +
-            '(FileId, LineNo, EdsmSystemId, SystemId, Timestamp, HasCoords, CoordsLocked) VALUES ' +
-            '(%s,     %s,     %s,           %s,       %s,        %s,        %s)',
+            '''
+                INSERT INTO EDSMFileLineSystems (
+                    FileId,
+                    LineNo,
+                    EdsmSystemId,
+                    SystemId,
+                    Timestamp,
+                    HasCoords,
+                    CoordsLocked
+                ) VALUES (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s
+                )
+            ''',
             values
         )
 
     def get_station_file_lines(self, fileid: int) -> dict[int, int]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, StationId FROM FileLineStations WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    StationId
+                FROM FileLineStations
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         return { row[0]: row[1] for row in cursor }
 
     def get_info_file_lines(self, fileid: int) -> dict[int, tuple[datetime, int]]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, Timestamp, SystemId FROM FileLineInfo WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    Timestamp,
+                    SystemId
+                FROM FileLineInfo
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         return { row[0]: (row[1], row[2]) for row in cursor }
 
     def get_body_file_lines(self, fileid: int) -> dict[int, int]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, BodyId FROM FileLineBodies WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    BodyId
+                FROM FileLineBodies
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         return { row[0]: row[1] for row in cursor if row[1] is not None }
 
     def get_faction_file_lines(self, fileid: int) -> dict[int, list[int]]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, FactionId FROM FileLineFactions WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    FactionId
+                FROM FileLineFactions
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         lines = {}
         for row in cursor:
@@ -2614,7 +3782,18 @@ class EDDNSysDB(object):
 
     def get_nav_route_file_lines(self, fileid: int) -> dict[tuple[int, int], int]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, EntryNum, SystemId FROM FileLineNavRoutes WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    EntryNum,
+                    SystemId
+                FROM FileLineNavRoutes
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         lines = {}
         for row in cursor:
@@ -2624,7 +3803,18 @@ class EDDNSysDB(object):
 
     def get_market_set_file_lines(self, fileid: int) -> dict[tuple[int, str], tuple[int, int]]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, SetType, MarketStationId, ItemSetId FROM FileLineMarketItemSets WHERE FileId = %s', (fileid,))
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    SetType,
+                    MarketStationId,
+                    ItemSetId
+                FROM FileLineMarketItemSets
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         lines = {}
         for row in cursor:
@@ -2634,7 +3824,16 @@ class EDDNSysDB(object):
 
     def get_edsm_body_file_lines(self, fileid: int) -> Sequence[int]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT MAX(LineNo) FROM EDSMFileLineBodies WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT MAX(LineNo)
+                FROM EDSMFileLineBodies
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
+
         row = cursor.fetchone()
         maxline = row[0]
 
@@ -2644,7 +3843,17 @@ class EDDNSysDB(object):
         filelinearray = numpy.zeros(maxline + 1, numpy.int32)
 
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, EdsmBodyId FROM EDSMFileLineBodies WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    EdsmBodyId
+                FROM EDSMFileLineBodies
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         for row in cursor:
             filelinearray[row[0]] = row[1]
@@ -2653,7 +3862,16 @@ class EDDNSysDB(object):
 
     def get_edsm_system_file_lines(self, fileid: int) -> Sequence[int]:
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT MAX(LineNo) FROM EDSMFileLineSystems WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT MAX(LineNo)
+                FROM EDSMFileLineSystems
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
+
         row = cursor.fetchone()
         maxline = row[0]
 
@@ -2663,7 +3881,17 @@ class EDDNSysDB(object):
         filelinearray = numpy.zeros(maxline + 1, numpy.int32)
 
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT LineNo, EdsmSystemId FROM EDSMFileLineSystems WHERE FileId = %s', (fileid,))
+
+        cursor.execute(
+            '''
+                SELECT
+                    LineNo,
+                    EdsmSystemId
+                FROM EDSMFileLineSystems
+                WHERE FileId = %s
+            ''',
+            (fileid,)
+        )
 
         for row in cursor:
             filelinearray[row[0]] = row[1]
@@ -2674,36 +3902,97 @@ class EDDNSysDB(object):
 
         sys.stderr.write('    Getting station line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineStations GROUP BY FileId')
+
+        cursor.execute(
+            '''
+                SELECT
+                    FileId,
+                    COUNT(LineNo)
+                FROM FileLineStations
+                GROUP BY FileId
+            '''
+        )
+
         stnlinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting info line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineInfo GROUP BY FileId')
+
+        cursor.execute(
+            '''
+                SELECT
+                    FileId,
+                    COUNT(LineNo)
+                FROM FileLineInfo
+                GROUP BY FileId
+            '''
+        )
+
         infolinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting body line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT FileId, COUNT(LineNo) FROM FileLineBodies GROUP BY FileId')
+
+        cursor.execute(
+            '''
+                SELECT
+                    FileId,
+                    COUNT(LineNo)
+                FROM FileLineBodies
+                GROUP BY FileId
+            '''
+        )
+
         bodylinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting faction line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT FileId, COUNT(DISTINCT LineNo) FROM FileLineFactions GROUP BY FileId')
+
+        cursor.execute(
+            '''
+                SELECT
+                    FileId,
+                    COUNT(DISTINCT LineNo)
+                FROM FileLineFactions
+                GROUP BY FileId
+            '''
+        )
+
         factionlinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting nav route line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT FileId, COUNT(*) FROM FileLineNavRoutes GROUP BY FileId')
+
+        cursor.execute(
+            '''
+                SELECT
+                    FileId,
+                    COUNT(*)
+                FROM FileLineNavRoutes
+                GROUP BY FileId
+            '''
+        )
+
         navroutelinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting market item line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('SELECT FileId, COUNT(*) FROM FileLineMarketItemSets GROUP BY FileId')
+
+        cursor.execute(
+            '''
+                SELECT
+                    FileId,
+                    COUNT(*)
+                FROM FileLineMarketItemSets
+                GROUP BY FileId
+            '''
+        )
+
         marketitemsetcounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting file info\n')
         cursor = mysql.makestreamingcursor(self.conn)
+
         cursor.execute('''
             SELECT
                 Id,
@@ -2743,26 +4032,33 @@ class EDDNSysDB(object):
     def get_edsm_body_files(self) -> dict[str, EDSMBodyFile]:
         sys.stderr.write('    Getting EDSM body line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('''
-            SELECT FileId, COUNT(LineNo)
-            FROM EDSMFileLineBodies flb
-            JOIN SystemBodies_EDSM sb ON sb.EdsmId = flb.EdsmBodyId
-            GROUP BY FileId
-        ''')
+
+        cursor.execute(
+            '''
+                SELECT FileId, COUNT(LineNo)
+                FROM EDSMFileLineBodies flb
+                JOIN SystemBodies_EDSM sb ON sb.EdsmId = flb.EdsmBodyId
+                GROUP BY FileId
+            '''
+        )
+
         bodylinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting EDSM body file info\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('''
-            SELECT
-                Id,
-                FileName,
-                Date,
-                LineCount,
-                CompressedSize
-            FROM EDSMBodyFiles f
-            ORDER BY Date
-        ''')
+
+        cursor.execute(
+            '''
+                SELECT
+                    Id,
+                    FileName,
+                    Date,
+                    LineCount,
+                    CompressedSize
+                FROM EDSMBodyFiles f
+                ORDER BY Date
+            '''
+        )
 
         return {
             row[1]: EDSMBodyFile(
@@ -2778,25 +4074,31 @@ class EDDNSysDB(object):
     def get_edsm_system_files(self) -> dict[str, EDSMSystemFile]:
         sys.stderr.write('    Getting EDSM system line counts\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('''
-            SELECT FileId, COUNT(LineNo)
-            FROM EDSMFileLineSystems fls
-            GROUP BY FileId
-        ''')
+
+        cursor.execute(
+            '''
+                SELECT FileId, COUNT(LineNo)
+                FROM EDSMFileLineSystems fls
+                GROUP BY FileId
+            '''
+        )
+
         systemlinecounts = { row[0]: row[1] for row in cursor }
 
         sys.stderr.write('    Getting EDSM system file info\n')
         cursor = mysql.makestreamingcursor(self.conn)
-        cursor.execute('''
-            SELECT
-                Id,
-                FileName,
-                Date,
-                LineCount,
-                CompressedSize
-            FROM EDSMSystemFiles f
-            ORDER BY Date, Hour
-        ''')
+        cursor.execute(
+            '''
+                SELECT
+                    Id,
+                    FileName,
+                    Date,
+                    LineCount,
+                    CompressedSize
+                FROM EDSMSystemFiles f
+                ORDER BY Date, Hour
+            '''
+        )
 
         return {
             row[1]: EDSMSystemFile(
@@ -2819,17 +4121,29 @@ class EDDNSysDB(object):
                          navroutesystemcount: int,
                          marketsetcount: int):
         cursor = mysql.makestreamingcursor(self.conn)
+
         cursor.execute(
-            'UPDATE Files SET ' +
-            'LineCount = %s, ' +
-            'CompressedSize = %s, ' +
-            'UncompressedSize = %s, ' +
-            'PopulatedLineCount = %s, ' +
-            'StationLineCount = %s, ' +
-            'NavRouteSystemCount = %s, ' +
-            'MarketItemSetCount = %s ' +
-            'WHERE Id = %s',
-            (linecount, comprsize, totalsize, poplinecount, stnlinecount, navroutesystemcount, marketsetcount, fileid)
+            '''
+                UPDATE Files SET
+                    LineCount = %s,
+                    CompressedSize = %s,
+                    UncompressedSize = %s,
+                    PopulatedLineCount = %s,
+                    StationLineCount = %s,
+                    NavRouteSystemCount = %s,
+                    MarketItemSetCount = %s
+                WHERE Id = %s
+            ''',
+            (
+                linecount,
+                comprsize,
+                totalsize,
+                poplinecount,
+                stnlinecount,
+                navroutesystemcount,
+                marketsetcount,
+                fileid
+            )
         )
 
     def update_edsm_body_file_info(self,
@@ -2838,9 +4152,21 @@ class EDDNSysDB(object):
                                    totalsize: int,
                                    comprsize: int):
         cursor = mysql.makestreamingcursor(self.conn)
+
         cursor.execute(
-            'UPDATE EDSMBodyFiles SET LineCount = %s, CompressedSize = %s, UncompressedSize = %s WHERE Id = %s',
-            (linecount, comprsize, totalsize, fileid)
+            '''
+                UPDATE EDSMBodyFiles SET
+                    LineCount = %s,
+                    CompressedSize = %s,
+                    UncompressedSize = %s
+                WHERE Id = %s
+            ''',
+            (
+                linecount,
+                comprsize,
+                totalsize,
+                fileid
+            )
         )
 
     def update_edsm_system_file_info(self,
@@ -2849,9 +4175,21 @@ class EDDNSysDB(object):
                                      totalsize: int,
                                      comprsize: int):
         cursor = mysql.makestreamingcursor(self.conn)
+
         cursor.execute(
-            'UPDATE EDSMSystemFiles SET LineCount = %s, CompressedSize = %s, UncompressedSize = %s WHERE Id = %s',
-            (linecount, comprsize, totalsize, fileid)
+            '''
+                UPDATE EDSMSystemFiles SET
+                    LineCount = %s,
+                    CompressedSize = %s,
+                    UncompressedSize = %s
+                WHERE Id = %s
+            ''',
+            (
+                linecount,
+                comprsize,
+                totalsize,
+                fileid
+            )
         )
 
 
